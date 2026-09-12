@@ -77,6 +77,7 @@
 #include <pcb_target.h>
 #include <pcb_point.h>
 #include <pcb_track.h>
+#include <board_commit.h>
 #include <layer_pairs.h>
 #include <drawing_sheet/ds_proxy_view_item.h>
 #include <board_text_var_adapter.h>
@@ -767,6 +768,8 @@ void PCB_EDIT_FRAME::OnCrossProbeFlashTimer( wxTimerEvent& aEvent )
 
 PCB_EDIT_FRAME::~PCB_EDIT_FRAME()
 {
+    GetCanvas()->Unbind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onTrackWidthWheel, this );
+
     // Always ensure that we are unregistered even in a close without graceful doCloseWindow()
     if( GetBoard() )
         Kiway().LocalHistory().UnregisterSaver( GetBoard() );
@@ -1079,6 +1082,56 @@ void PCB_EDIT_FRAME::setupTools()
 
     // Run the selection tool, it is supposed to be always active
     m_toolManager->InvokeTool( "common.InteractiveSelection" );
+
+    // Bound after the generic view controls so this handler gets first refusal on wheel events.
+    GetCanvas()->Bind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onTrackWidthWheel, this );
+}
+
+
+void PCB_EDIT_FRAME::onTrackWidthWheel( wxMouseEvent& aEvent )
+{
+    if( !aEvent.ControlDown() || aEvent.GetWheelAxis() != wxMOUSE_WHEEL_VERTICAL )
+    {
+        aEvent.Skip();
+        return;
+    }
+
+    std::vector<PCB_TRACK*> selectedTracks;
+
+    for( PCB_TRACK* track : GetBoard()->Tracks() )
+        if( track->IsSelected() && ( track->Type() == PCB_TRACE_T || track->Type() == PCB_ARC_T ) )
+            selectedTracks.emplace_back( track );
+
+    if( selectedTracks.empty() )
+    {
+        aEvent.Skip();
+        return;
+    }
+
+    const int rotation = aEvent.GetWheelRotation();
+
+    if( rotation == 0 )
+        return;
+
+    const int step = pcbIUScale.mmToIU( aEvent.ShiftDown() ? 0.01 : 0.05 );
+    const int minimumWidth = pcbIUScale.mmToIU( 0.01 );
+    const int direction = rotation > 0 ? 1 : -1;
+    BOARD_COMMIT commit( this );
+
+    for( PCB_TRACK* track : selectedTracks )
+    {
+        const int oldWidth = track->GetWidth();
+        const int newWidth = std::max( minimumWidth, oldWidth + direction * step );
+
+        if( newWidth == oldWidth )
+            continue;
+
+        commit.Modify( track );
+        track->SetWidth( newWidth );
+    }
+
+    commit.Push( _( "Change Track Width" ) );
+    GetCanvas()->Refresh();
 }
 
 

@@ -733,6 +733,14 @@ protected:
     void setupUIConditions() override;
 
     /**
+     * Adjust selected copper track and arc widths from Ctrl+mouse-wheel.
+     *
+     * Ctrl+wheel changes widths by 0.05 mm and Ctrl+Shift+wheel uses a 0.01 mm step.  The event
+     * is passed on to the normal view controls when no eligible item is selected.
+     */
+    void onTrackWidthWheel( wxMouseEvent& aEvent );
+
+    /**
      * Switch currently used canvas (Cairo / OpenGL).
      *
      * It also reinit the layers manager that slightly changes with canvases
