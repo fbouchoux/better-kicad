@@ -2485,6 +2485,9 @@ void PCB_POINT_EDITOR::updateEditedPoint( const TOOL_EVENT& aEvent )
 }
 
 
+/**
+ * Start point editing when the new selection supports it
+ */
 int PCB_POINT_EDITOR::OnSelectionChange( const TOOL_EVENT& aEvent )
 {
     if( !m_selectionTool || aEvent.Matches( EVENTS::InhibitSelectionEditing ) )
@@ -2513,12 +2516,6 @@ int PCB_POINT_EDITOR::OnSelectionChange( const TOOL_EVENT& aEvent )
     if( !item || ( item->IsLocked() && !overrideLocks ) )
         return 0;
 
-    Activate();
-    // Must be done after Activate() so that it gets set into the correct context
-    getViewControls()->ShowCursor( true );
-
-    PCB_GRID_HELPER grid( m_toolMgr, editFrame->GetMagneticItemsSettings() );
-    grid.SetPointEditProfile( true );
     m_constraintDragSession.reset();
 
     // Use the original object as a construction item
@@ -2569,6 +2566,14 @@ int PCB_POINT_EDITOR::OnSelectionChange( const TOOL_EVENT& aEvent )
 
     if( !m_editPoints )
         return 0;
+
+    // Only activate the tool and its graphical cursor after confirming that the selection can
+    // actually be point-edited
+    Activate();
+    getViewControls()->ShowCursor( true );
+
+    PCB_GRID_HELPER grid( m_toolMgr, editFrame->GetMagneticItemsSettings() );
+    grid.SetPointEditProfile( true );
 
     PCB_SHAPE* graphicItem = dynamic_cast<PCB_SHAPE*>( item );
 
