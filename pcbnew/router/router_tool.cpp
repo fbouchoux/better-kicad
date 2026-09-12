@@ -1566,8 +1566,15 @@ int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
 
     m_iface->SetBoard( board() );
 
-    bool       replacing = m_pendingSmartVia;
     TOOL_EVENT placementEvent = aEvent;
+
+    // Moving away from a placed Smart Via starts a new track on its destination layer.  That
+    // transition is no longer replaceable even if the new track has not been fixed separately.
+    if( m_pendingSmartVia && m_pendingSmartViaPlaced
+            && m_router->Placer()->CurrentEnd() != m_router->Placer()->CurrentStart() )
+        clearPendingSmartVia( false );
+
+    bool replacing = m_pendingSmartVia;
 
     // Rewind a just-placed transition while its destination track is still empty
     if( m_pendingSmartVia && m_pendingSmartViaPlaced )
