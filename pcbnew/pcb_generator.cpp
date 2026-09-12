@@ -69,7 +69,7 @@ std::vector<EDA_ITEM*> PCB_GENERATOR::GetPreviewItems( GENERATOR_TOOL* aTool,
 
 bool PCB_GENERATOR::MakeEditPoints( EDIT_POINTS& aEditPoints ) const
 {
-    return true;
+    return false;
 }
 
 

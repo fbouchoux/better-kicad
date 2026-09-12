@@ -1354,8 +1354,7 @@ public:
 
     bool UpdatePoints( EDIT_POINTS& aPoints ) override
     {
-        m_generator.UpdateEditPoints( aPoints );
-        return true;
+        return m_generator.UpdateEditPoints( aPoints );
     }
 
     void UpdateItem( const EDIT_POINT& aEditedPoint, EDIT_POINTS& aPoints, COMMIT& aCommit,
@@ -2251,10 +2250,10 @@ bool PCB_POINT_EDITOR::Init()
 
 std::shared_ptr<EDIT_POINTS> PCB_POINT_EDITOR::makePoints( EDA_ITEM* aItem )
 {
-    std::shared_ptr<EDIT_POINTS> points = std::make_shared<EDIT_POINTS>( aItem );
-
     if( !aItem )
-        return points;
+        return nullptr;
+
+    std::shared_ptr<EDIT_POINTS> points = std::make_shared<EDIT_POINTS>( aItem );
 
     // Reset the behaviour and we'll make a new one
     m_editorBehavior = nullptr;
@@ -2398,7 +2397,14 @@ std::shared_ptr<EDIT_POINTS> PCB_POINT_EDITOR::makePoints( EDA_ITEM* aItem )
         else
         {
             PCB_GENERATOR* generator = static_cast<PCB_GENERATOR*>( aItem );
-            m_editorBehavior = std::make_unique<GENERATOR_POINT_EDIT_BEHAVIOR>( *generator );
+
+            if( generator->MakeEditPoints( *points ) )
+            {
+                m_editorBehavior = std::make_unique<GENERATOR_POINT_EDIT_BEHAVIOR>( *generator );
+                return points;
+            }
+
+            points.reset();
         }
         break;
     }
@@ -2439,6 +2445,8 @@ std::shared_ptr<EDIT_POINTS> PCB_POINT_EDITOR::makePoints( EDA_ITEM* aItem )
 
     if( m_editorBehavior )
         m_editorBehavior->MakePoints( *points );
+    else
+        points.reset();
 
     return points;
 }
@@ -2570,6 +2578,11 @@ int PCB_POINT_EDITOR::OnSelectionChange( const TOOL_EVENT& aEvent )
     // Only activate the tool and its graphical cursor after confirming that the selection can
     // actually be point-edited
     Activate();
+
+    // Activating a tool may synchronously reset it through a context change.
+    if( !m_editPoints )
+        return 0;
+
     getViewControls()->ShowCursor( true );
 
     PCB_GRID_HELPER grid( m_toolMgr, editFrame->GetMagneticItemsSettings() );
