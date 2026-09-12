@@ -583,6 +583,9 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
 
             if( m_selection.GetSize() == 1 && m_selection[0]->Type() == PCB_GROUP_T )
                 EnterGroup();
+            else if( m_selection.GetSize() == 1
+                     && m_selection[0]->IsType( { PCB_TRACE_T, PCB_ARC_T } ) )
+                m_toolMgr->RunAction( PCB_ACTIONS::selectConnection );
             else if( !selectChartRow( evt->Position() ) )
                 m_toolMgr->RunAction( PCB_ACTIONS::properties );
         }
