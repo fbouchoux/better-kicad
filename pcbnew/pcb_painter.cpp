@@ -50,6 +50,7 @@
 #include <pcb_target.h>
 #include <pcb_board_outline.h>
 #include <pcb_grid_item.h>
+#include <generators/pcb_via_stack.h>
 
 #include <layer_ids.h>
 #include <lset.h>
@@ -1168,10 +1169,35 @@ void PCB_PAINTER::draw( const PCB_ARC* aArc, int aLayer )
 }
 
 
+/**
+ * Return the layer colors that represent a via hole.
+ * Coaxial members of a stacked microvia use the full stack endpoints.
+ */
+static void viaHoleLayerPair( const PCB_VIA* aVia, PCB_LAYER_ID& aTop,
+                              PCB_LAYER_ID& aBottom )
+{
+    aVia->LayerPair( &aTop, &aBottom );
+
+    const PCB_VIA_STACK* stack = dynamic_cast<const PCB_VIA_STACK*>( aVia->GetParentGroup() );
+
+    if( !stack || stack->GetStyle() != VIA_STACK_STYLE::STACKED )
+        return;
+
+    aTop = stack->GetStartLayer();
+    aBottom = stack->GetEndLayer();
+
+    if( !IsCopperLayerLowerThan( aBottom, aTop ) )
+        std::swap( aTop, aBottom );
+}
+
+
+/**
+ * Return true when the hole should show its two endpoint layer colors.
+ */
 static bool viaHoleShowsLayerPair( const PCB_VIA* aVia )
 {
     PCB_LAYER_ID layerTop, layerBottom;
-    aVia->LayerPair( &layerTop, &layerBottom );
+    viaHoleLayerPair( aVia, layerTop, layerBottom );
 
     return aVia->GetViaType() == VIATYPE::BLIND || aVia->GetViaType() == VIATYPE::BURIED
            || ( aVia->GetViaType() == VIATYPE::MICROVIA && ( layerTop != F_Cu || layerBottom != B_Cu ) );
@@ -1239,7 +1265,7 @@ void PCB_PAINTER::draw( const PCB_VIA* aVia, int aLayer )
 
     PCB_LAYER_ID currentLayer = ToLAYER_ID( copperLayer );
     PCB_LAYER_ID layerTop, layerBottom;
-    aVia->LayerPair( &layerTop, &layerBottom );
+    viaHoleLayerPair( aVia, layerTop, layerBottom );
 
     // Blind/buried vias (and microvias) will use different hole and label rendering
     bool isBlindBuried = viaHoleShowsLayerPair( aVia );

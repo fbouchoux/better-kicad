@@ -22,6 +22,7 @@
 #include "router_preview_item.h"
 
 #include <deque>
+#include <optional>
 
 #include <board_item.h>
 #include <board_connected_item.h>
@@ -169,7 +170,26 @@ void ROUTER_PREVIEW_ITEM::Update( const PNS::ITEM* aItem )
         m_originLayer = m_layer = LAYER_VIAS;
         m_type = PR_SHAPE;
         m_width = 0;
-        m_color = COLOR4D( 0.7, 0.7, 0.7, 0.8 );
+
+        // A routing-head via previews the copper layer where routing will continue
+        int colorLayer = aItem->Layers().Start();
+
+        if( ( m_flags & PNS_HEAD_TRACE ) && PNS::ROUTER::GetInstance() )
+        {
+            PNS::ROUTER* router = PNS::ROUTER::GetInstance();
+            int          currentLayer = router->GetCurrentLayer();
+
+            if( currentLayer >= 0 )
+            {
+                std::optional<int> destination = router->Sizes().PairedLayer( currentLayer );
+
+                if( destination )
+                    colorLayer = *destination;
+            }
+        }
+
+        PCB_LAYER_ID boardLayer = m_iface->GetBoardLayerFromPNSLayer( colorLayer );
+        m_color = getLayerColor( boardLayer, aItem ).WithAlpha( 0.8 );
         m_depth = m_originDepth - ( static_cast<double>( PCB_LAYER_ID_COUNT ) * LayerDepthFactor );
 
         delete m_shape;

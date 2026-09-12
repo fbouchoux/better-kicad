@@ -124,6 +124,25 @@ private:
     int onLayerCommand( const TOOL_EVENT& aEvent );
     int onViaCommand( const TOOL_EVENT& aEvent );
     int onViaStackCommand( const TOOL_EVENT& aEvent );
+    int onSmartViaCommand( const TOOL_EVENT& aEvent );
+
+    /**
+     * Configure the existing PNS via preview for an explicit layer transition.
+     */
+    void configureViaPlacement( const TOOL_EVENT& aEvent, PCB_LAYER_ID aStart,
+                                PCB_LAYER_ID aTarget, VIATYPE aType, int aDiameter = 0,
+                                int aDrill = 0 );
+
+    /**
+     * Return true when DRC permits a via of the requested type and span.
+     */
+    bool isViaAllowed( PCB_LAYER_ID aStart, PCB_LAYER_ID aTarget, VIATYPE aType,
+                       int aDiameter, int aDrill ) const;
+
+    /**
+     * Forget the replaceable Smart Via state, optionally removing its queued stack expansion.
+     */
+    void clearPendingSmartVia( bool aRemoveExpansion );
 
     /// Build and commit a staggered via stack queued during routing (after the PNS world is gone).
     void commitPendingViaStack();
@@ -159,6 +178,13 @@ private:
 
     // Vias already expandable when the first drop was armed; the route did not create these.
     std::set<KIID> m_preRouteExpandableVias;
+
+    // A Smart Via remains replaceable until copper is fixed on its destination layer
+    bool         m_pendingSmartVia = false;
+    bool         m_pendingSmartViaPlaced = false;
+    bool         m_pendingSmartViaExpansion = false;
+    PCB_LAYER_ID m_pendingSmartViaStart = UNDEFINED_LAYER;
+    PCB_LAYER_ID m_pendingSmartViaTarget = UNDEFINED_LAYER;
 };
 
 #endif

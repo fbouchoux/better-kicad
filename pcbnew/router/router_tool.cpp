@@ -28,6 +28,7 @@
 
 #include <functional>
 #include <iomanip>
+#include <iterator>
 #include <utility>
 #include <sstream>
 
@@ -41,6 +42,7 @@ using namespace std::placeholders;
 #include <collectors.h>
 #include <footprint.h>
 #include <geometry/geometry_utils.h>
+#include <layer_range.h>
 #include <pad.h>
 #include <zone.h>
 #include <pcb_edit_frame.h>
@@ -71,12 +73,16 @@ using namespace std::placeholders;
 #include <tools/pcb_actions.h>
 #include <tools/pcb_selection_tool.h>
 #include <board_commit.h>
+#include <board_stackup_manager/board_stackup.h>
+#include <board_stackup_manager/stackup_predefined_prms.h>
 #include <generators/pcb_via_stack.h>
 #include <tools/drawing_tool.h>
 #include <tools/pcb_grid_helper.h>
 #include <tools/drc_tool.h>
 #include <tools/zone_filler_tool.h>
 #include <drc/drc_interactive_courtyard_clearance.h>
+#include <drc/drc_item.h>
+#include <drc/drc_rule.h>
 
 #include <project.h>
 #include <project/project_file.h>
@@ -185,6 +191,15 @@ enum VIA_ACTION_FLAGS
 };
 
 
+enum SMART_VIA_DESTINATION
+{
+    SMART_VIA_TOP,
+    SMART_VIA_BOTTOM,
+    SMART_VIA_NEXT,
+    SMART_VIA_PREVIOUS
+};
+
+
 // Actions, being statically-defined, require specialized I18N handling.  We continue to
 // use the _() macro so that string harvesting by the I18N framework doesn't have to be
 // specialized, but we don't translate on initialization and instead do it in the getters.
@@ -236,6 +251,42 @@ static const TOOL_ACTION ACT_PlaceViaStack(
                              "and continues on the target layer." ) )
                 .Icon( BITMAPS::add_via_stack )
                 .Flags( AF_NONE ) );
+
+static const TOOL_ACTION ACT_SmartViaTop( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveRouter.SmartViaTop" )
+        .Scope( AS_CONTEXT )
+        .FriendlyName( _( "Smart Via: Go to Top" ) )
+        .Tooltip( _( "Places the best valid via transition to the top copper layer." ) )
+        .Icon( BITMAPS::via )
+        .Flags( AF_NONE )
+        .Parameter<int>( SMART_VIA_TOP ) );
+
+static const TOOL_ACTION ACT_SmartViaBottom( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveRouter.SmartViaBottom" )
+        .Scope( AS_CONTEXT )
+        .FriendlyName( _( "Smart Via: Go to Bottom" ) )
+        .Tooltip( _( "Places the best valid via transition to the bottom copper layer." ) )
+        .Icon( BITMAPS::via )
+        .Flags( AF_NONE )
+        .Parameter<int>( SMART_VIA_BOTTOM ) );
+
+static const TOOL_ACTION ACT_SmartViaNext( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveRouter.SmartViaNext" )
+        .Scope( AS_CONTEXT )
+        .FriendlyName( _( "Smart Via: Go to Next Copper Layer" ) )
+        .Tooltip( _( "Places the best valid via transition to the next physical copper layer." ) )
+        .Icon( BITMAPS::via )
+        .Flags( AF_NONE )
+        .Parameter<int>( SMART_VIA_NEXT ) );
+
+static const TOOL_ACTION ACT_SmartViaPrevious( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveRouter.SmartViaPrevious" )
+        .Scope( AS_CONTEXT )
+        .FriendlyName( _( "Smart Via: Go to Previous Copper Layer" ) )
+        .Tooltip( _( "Places the best valid via transition to the previous physical copper layer." ) )
+        .Icon( BITMAPS::via )
+        .Flags( AF_NONE )
+        .Parameter<int>( SMART_VIA_PREVIOUS ) );
 
 static const TOOL_ACTION ACT_SelLayerAndPlaceThroughVia( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveRouter.SelLayerAndPlaceVia" )
@@ -678,6 +729,10 @@ bool ROUTER_TOOL::Init()
     menu.AddItem( ACT_SelLayerAndPlaceThroughVia,     SELECTION_CONDITIONS::ShowAlways );
     menu.AddItem( ACT_SelLayerAndPlaceBlindVia,       SELECTION_CONDITIONS::ShowAlways );
     menu.AddItem( ACT_SelLayerAndPlaceMicroVia,       SELECTION_CONDITIONS::ShowAlways );
+    menu.AddItem( ACT_SmartViaTop,                    SELECTION_CONDITIONS::ShowAlways );
+    menu.AddItem( ACT_SmartViaBottom,                 SELECTION_CONDITIONS::ShowAlways );
+    menu.AddItem( ACT_SmartViaNext,                   SELECTION_CONDITIONS::ShowAlways );
+    menu.AddItem( ACT_SmartViaPrevious,               SELECTION_CONDITIONS::ShowAlways );
     menu.AddItem( ACT_SwitchPosture,                  SELECTION_CONDITIONS::ShowAlways );
 
     // Add submenu for track corner mode handling
@@ -1176,6 +1231,8 @@ int ROUTER_TOOL::onLayerCommand( const TOOL_EVENT& aEvent )
 
 int ROUTER_TOOL::onViaCommand( const TOOL_EVENT& aEvent )
 {
+    clearPendingSmartVia( !m_pendingSmartViaPlaced );
+
     if( !m_router->IsPlacingVia() )
     {
         return handleLayerSwitch( aEvent, true );
@@ -1196,6 +1253,8 @@ int ROUTER_TOOL::onViaCommand( const TOOL_EVENT& aEvent )
 
 int ROUTER_TOOL::onViaStackCommand( const TOOL_EVENT& aEvent )
 {
+    clearPendingSmartVia( !m_pendingSmartViaPlaced );
+
     if( !IsToolActive() )
         return 0;
 
@@ -1324,6 +1383,391 @@ int ROUTER_TOOL::onViaStackCommand( const TOOL_EVENT& aEvent )
         m_router->Move( m_endSnapPoint, m_endItem );
     }
 
+    UpdateMessagePanel();
+    return 0;
+}
+
+
+bool ROUTER_TOOL::isViaAllowed( PCB_LAYER_ID aStart, PCB_LAYER_ID aTarget, VIATYPE aType,
+                                int aDiameter, int aDrill ) const
+{
+    BOARD_DESIGN_SETTINGS& bds = board()->GetDesignSettings();
+    PCB_VIA                via( board() );
+
+    // Resolve type-specific rules against the routed net and cursor position
+    via.SetViaType( aType );
+    via.SetLayerPair( aStart, aTarget );
+    via.SetPosition( m_endSnapPoint );
+    via.SetWidth( PADSTACK::TEMP_ALL_LAYERS, aDiameter );
+    via.SetDrill( aDrill );
+
+    if( !m_router->GetCurrentNets().empty() )
+        via.SetNet( static_cast<NETINFO_ITEM*>( m_router->GetCurrentNets()[0] ) );
+
+    DRC_CONSTRAINT constraint =
+            bds.m_DRCEngine->EvalRules( DISALLOW_CONSTRAINT, &via, nullptr, UNDEFINED_LAYER );
+
+    if( constraint.m_DisallowFlags && constraint.GetSeverity() != RPT_SEVERITY_IGNORE )
+        return false;
+
+    // Reject configured dimensions that violate contextual diameter or hole-size rules
+    for( DRC_CONSTRAINT_T type : { VIA_DIAMETER_CONSTRAINT, HOLE_SIZE_CONSTRAINT } )
+    {
+        constraint = bds.m_DRCEngine->EvalRules( type, &via, nullptr, aStart );
+
+        if( constraint.IsNull() || constraint.GetSeverity() == RPT_SEVERITY_IGNORE )
+            continue;
+
+        int value = type == VIA_DIAMETER_CONSTRAINT ? aDiameter : aDrill;
+
+        if( ( constraint.GetValue().HasMin() && value < constraint.GetValue().Min() )
+            || ( constraint.GetValue().HasMax() && value > constraint.GetValue().Max() ) )
+        {
+            return false;
+        }
+    }
+
+    if( aType != VIATYPE::MICROVIA
+        || bds.GetSeverity( DRCE_MICROVIA_CROSSES_CORE ) == RPT_SEVERITY_IGNORE )
+    {
+        return true;
+    }
+
+    // Apply the existing microvia core restriction while choosing the transition type
+    const std::vector<BOARD_STACKUP_ITEM*>& stackup = bds.GetStackupDescriptor().GetList();
+    int                                     first = -1;
+    int                                     last = -1;
+
+    for( int i = 0; i < static_cast<int>( stackup.size() ); ++i )
+    {
+        if( stackup[i]->GetType() != BS_ITEM_TYPE_COPPER )
+            continue;
+
+        PCB_LAYER_ID layer = stackup[i]->GetBrdLayerId();
+
+        if( layer == aStart || layer == aTarget )
+        {
+            if( first < 0 )
+                first = i;
+            else
+                last = i;
+        }
+    }
+
+    if( first < 0 || last < 0 )
+        return true;
+
+    for( int i = first + 1; i < last; ++i )
+    {
+        if( stackup[i]->GetType() == BS_ITEM_TYPE_DIELECTRIC && stackup[i]->IsEnabled()
+            && stackup[i]->GetTypeName() == KEY_CORE )
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+void ROUTER_TOOL::clearPendingSmartVia( bool aRemoveExpansion )
+{
+    // A Smart Via stack owns the most recently queued expansion until it is replaced
+    if( aRemoveExpansion && m_pendingSmartViaExpansion && !m_pendingStackedExpansions.empty() )
+    {
+        m_pendingStackedExpansions.pop_back();
+
+        if( m_pendingStackedExpansions.empty() )
+            m_preRouteExpandableVias.clear();
+    }
+
+    m_pendingSmartVia = false;
+    m_pendingSmartViaPlaced = false;
+    m_pendingSmartViaExpansion = false;
+    m_pendingSmartViaStart = UNDEFINED_LAYER;
+    m_pendingSmartViaTarget = UNDEFINED_LAYER;
+}
+
+
+void ROUTER_TOOL::configureViaPlacement( const TOOL_EVENT& aEvent, PCB_LAYER_ID aStart,
+                                         PCB_LAYER_ID aTarget, VIATYPE aType, int aDiameter,
+                                         int aDrill )
+{
+    BOARD_DESIGN_SETTINGS& bds = board()->GetDesignSettings();
+    PNS::SIZES_SETTINGS    sizes = m_router->Sizes();
+
+    // A microvia stack preset can supply fixed dimensions; ordinary vias keep their sizing path
+    sizes.ClearLayerPairs();
+    sizes.SetViaDiameter( bds.m_ViasMinSize );
+    sizes.SetViaDrill( bds.m_MinThroughDrill );
+
+    if( aDiameter > 0 && aDrill > 0 )
+    {
+        sizes.SetViaDiameter( aDiameter );
+        sizes.SetViaDrill( aDrill );
+    }
+    else if( bds.UseNetClassVia() || aType == VIATYPE::MICROVIA )
+    {
+        PCB_VIA dummyVia( board() );
+        dummyVia.SetViaType( aType );
+        dummyVia.SetLayerPair( aStart, aTarget );
+
+        if( !m_router->GetCurrentNets().empty() )
+            dummyVia.SetNet( static_cast<NETINFO_ITEM*>( m_router->GetCurrentNets()[0] ) );
+
+        DRC_CONSTRAINT constraint =
+                bds.m_DRCEngine->EvalRules( VIA_DIAMETER_CONSTRAINT, &dummyVia, nullptr, aStart );
+
+        if( !constraint.IsNull() )
+            sizes.SetViaDiameter( constraint.m_Value.Opt() );
+
+        constraint = bds.m_DRCEngine->EvalRules( HOLE_SIZE_CONSTRAINT, &dummyVia, nullptr, aStart );
+
+        if( !constraint.IsNull() )
+            sizes.SetViaDrill( constraint.m_Value.Opt() );
+    }
+    else
+    {
+        sizes.SetViaDiameter( bds.GetCurrentViaSize() );
+        sizes.SetViaDrill( bds.GetCurrentViaDrill() );
+    }
+
+    sizes.SetViaType( aType );
+    sizes.AddLayerPair( m_iface->GetPNSLayerFromBoardLayer( aStart ),
+                        m_iface->GetPNSLayerFromBoardLayer( aTarget ) );
+    m_router->UpdateSizes( sizes );
+
+    if( !m_router->IsPlacingVia() )
+        m_router->ToggleViaPlacement();
+
+    if( m_router->RoutingInProgress() )
+    {
+        updateEndItem( aEvent );
+        m_router->Move( m_endSnapPoint, m_endItem );
+    }
+    else
+    {
+        updateStartItem( aEvent );
+    }
+}
+
+
+int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
+{
+    if( !IsToolActive() || !m_router->RoutingInProgress() || !m_router->Placer() )
+        return 0;
+
+    if( m_router->Mode() != PNS::PNS_MODE_ROUTE_SINGLE )
+    {
+        frame()->GetInfoBar()->ShowMessageFor( _( "Smart Via currently supports single-track routing." ),
+                                               3000, wxICON_INFORMATION );
+        return 0;
+    }
+
+    m_iface->SetBoard( board() );
+
+    bool       replacing = m_pendingSmartVia;
+    TOOL_EVENT placementEvent = aEvent;
+
+    // Rewind a just-placed transition while its destination track is still empty
+    if( m_pendingSmartVia && m_pendingSmartViaPlaced )
+    {
+        VECTOR2I transitionPosition = m_router->Placer()->CurrentStart();
+
+        m_router->UndoLastSegment();
+        frame()->SetActiveLayer( m_pendingSmartViaStart );
+        getViewControls()->WarpMouseCursor( transitionPosition, true );
+        placementEvent.SetMousePosition( transitionPosition );
+        m_endSnapPoint = transitionPosition;
+    }
+
+    PCB_LAYER_ID startLayer = m_pendingSmartVia
+                                      ? m_pendingSmartViaStart
+                                      : m_iface->GetBoardLayerFromPNSLayer( m_router->GetCurrentLayer() );
+    PCB_LAYER_ID relativeLayer = m_pendingSmartVia ? m_pendingSmartViaTarget : startLayer;
+
+    // Remove the superseded stack metadata before selecting the replacement
+    if( m_pendingSmartViaExpansion && !m_pendingStackedExpansions.empty() )
+    {
+        m_pendingStackedExpansions.pop_back();
+
+        if( m_pendingStackedExpansions.empty() )
+            m_preRouteExpandableVias.clear();
+    }
+
+    m_pendingSmartViaExpansion = false;
+
+    std::vector<PCB_LAYER_ID> layers;
+
+    for( PCB_LAYER_ID layer : LAYER_RANGE( F_Cu, B_Cu, board()->GetCopperLayerCount() ) )
+        layers.push_back( layer );
+
+    auto current = std::find( layers.begin(), layers.end(), relativeLayer );
+
+    if( current == layers.end() )
+    {
+        clearPendingSmartVia( false );
+        return 0;
+    }
+
+    PCB_LAYER_ID targetLayer = UNDEFINED_LAYER;
+
+    // Next and previous deliberately use physical stack order, independent of visibility
+    switch( aEvent.Parameter<int>() )
+    {
+    case SMART_VIA_TOP:
+        targetLayer = layers.front();
+        break;
+
+    case SMART_VIA_BOTTOM:
+        targetLayer = layers.back();
+        break;
+
+    case SMART_VIA_NEXT:
+        if( std::next( current ) != layers.end() )
+            targetLayer = *std::next( current );
+        break;
+
+    case SMART_VIA_PREVIOUS:
+        if( current != layers.begin() )
+            targetLayer = *std::prev( current );
+        break;
+    }
+
+    if( targetLayer == UNDEFINED_LAYER || targetLayer == startLayer )
+    {
+        if( replacing && m_router->IsPlacingVia() )
+            m_router->ToggleViaPlacement();
+
+        clearPendingSmartVia( false );
+
+        updateEndItem( placementEvent );
+        m_router->Move( m_endSnapPoint, m_endItem );
+        return 0;
+    }
+
+    BOARD_DESIGN_SETTINGS&               bds = board()->GetDesignSettings();
+    const std::vector<VIA_STACK_PRESET>& presets = bds.m_ViaStackPresets;
+    int hopCount = static_cast<int>( LAYER_RANGE( startLayer, targetLayer,
+                                                  board()->GetCopperLayerCount() ).size() ) - 1;
+    int viaDiameter = 0;
+    int viaDrill = 0;
+    const VIA_STACK_PRESET* microviaPreset = nullptr;
+
+    // Resolve a preset exactly as the existing microvia stack placement does
+    auto presetIsAllowed = [&]( const VIA_STACK_PRESET& aPreset )
+    {
+        bool sameEndpoints = ( aPreset.m_StartLayer == startLayer
+                               && aPreset.m_EndLayer == targetLayer )
+                             || ( aPreset.m_StartLayer == targetLayer
+                                  && aPreset.m_EndLayer == startLayer );
+
+        if( !sameEndpoints
+            || !PCB_VIA_STACK::IsSpanValid( board(), aPreset.m_StartLayer, aPreset.m_EndLayer )
+            || ( hopCount > 1 && aPreset.m_Staggered ) )
+        {
+            return false;
+        }
+
+        int net = NETINFO_LIST::UNCONNECTED;
+
+        if( !m_router->GetCurrentNets().empty() )
+            net = static_cast<NETINFO_ITEM*>( m_router->GetCurrentNets()[0] )->GetNetCode();
+
+        if( aPreset.m_UseNetclass )
+        {
+            NETINFO_ITEM* ni = board()->FindNet( net );
+            NETCLASS*     nc = ni ? ni->GetNetClass() : nullptr;
+
+            viaDiameter = ( nc && nc->HasuViaDiameter() ) ? nc->GetuViaDiameter()
+                                                           : bds.GetCurrentViaSize();
+            viaDrill = ( nc && nc->HasuViaDrill() ) ? nc->GetuViaDrill()
+                                                     : bds.GetCurrentViaDrill();
+        }
+        else
+        {
+            viaDiameter = aPreset.m_ViaSize > 0 ? aPreset.m_ViaSize : bds.GetCurrentViaSize();
+            viaDrill = aPreset.m_ViaDrill > 0 ? aPreset.m_ViaDrill : bds.GetCurrentViaDrill();
+        }
+
+        // Check every physical hop because rules may vary by layer or stackup material
+        std::vector<PCB_LAYER_ID> layers;
+
+        for( PCB_LAYER_ID layer : LAYER_RANGE( startLayer, targetLayer,
+                                               board()->GetCopperLayerCount() ) )
+        {
+            layers.push_back( layer );
+        }
+
+        for( int i = 0; i < hopCount; ++i )
+        {
+            if( !isViaAllowed( layers[i], layers[i + 1], VIATYPE::MICROVIA,
+                               viaDiameter, viaDrill ) )
+            {
+                return false;
+            }
+        }
+
+        PCB_VIA firstHop( board() );
+        firstHop.SetViaType( VIATYPE::MICROVIA );
+        firstHop.SetLayerPair( layers[0], layers[1] );
+        firstHop.SetPosition( m_endSnapPoint );
+
+        if( !m_router->GetCurrentNets().empty() )
+            firstHop.SetNet( static_cast<NETINFO_ITEM*>( m_router->GetCurrentNets()[0] ) );
+
+        DRC_CONSTRAINT depth = bds.m_DRCEngine->EvalRules(
+                MICROVIA_STACK_DEPTH_CONSTRAINT, &firstHop, nullptr, firstHop.GetLayer() );
+
+        return !depth.GetValue().HasMax() || hopCount <= depth.GetValue().Max()
+               || depth.GetSeverity() == RPT_SEVERITY_IGNORE;
+    };
+
+    // Prefer the selected preset, then use the first matching valid preset
+    if( !presets.empty() )
+    {
+        int active = std::clamp( bds.GetViaStackIndex(), 0, static_cast<int>( presets.size() ) - 1 );
+
+        if( presetIsAllowed( presets[active] ) )
+            microviaPreset = &presets[active];
+
+        for( const VIA_STACK_PRESET& preset : presets )
+        {
+            if( !microviaPreset && presetIsAllowed( preset ) )
+                microviaPreset = &preset;
+        }
+    }
+
+    if( !microviaPreset )
+    {
+        viaDiameter = 0;
+        viaDrill = 0;
+    }
+
+    // Queue the existing post-route expansion for a compatible multi-hop preset
+    if( microviaPreset && hopCount > 1 )
+    {
+        int net = NETINFO_LIST::UNCONNECTED;
+
+        if( !m_router->GetCurrentNets().empty() )
+            net = static_cast<NETINFO_ITEM*>( m_router->GetCurrentNets()[0] )->GetNetCode();
+
+        if( m_pendingStackedExpansions.empty() )
+            m_preRouteExpandableVias = PCB_VIA_STACK::CollectExpandableMicrovias( board() );
+
+        m_pendingStackedExpansions.push_back( { startLayer, targetLayer, net, *microviaPreset } );
+        m_pendingSmartViaExpansion = true;
+    }
+
+    m_pendingSmartVia = true;
+    m_pendingSmartViaPlaced = false;
+    m_pendingSmartViaStart = startLayer;
+    m_pendingSmartViaTarget = targetLayer;
+
+    // Without an exact microvia preset, always use a full-board PTH and only resume on the target
+    VIATYPE viaType = microviaPreset ? VIATYPE::MICROVIA : VIATYPE::THROUGH;
+    configureViaPlacement( placementEvent, startLayer, targetLayer, viaType,
+                           viaDiameter, viaDrill );
     UpdateMessagePanel();
     return 0;
 }
@@ -1469,12 +1913,8 @@ int ROUTER_TOOL::handleLayerSwitch( const TOOL_EVENT& aEvent, bool aForceVia )
         }
     }
 
-    BOARD_DESIGN_SETTINGS& bds = board()->GetDesignSettings();
-
     PCB_LAYER_ID pairTop    = frame()->GetScreen()->m_Route_Layer_TOP;
     PCB_LAYER_ID pairBottom = frame()->GetScreen()->m_Route_Layer_BOTTOM;
-
-    PNS::SIZES_SETTINGS sizes = m_router->Sizes();
 
     VIATYPE viaType     = VIATYPE::THROUGH;
     bool    selectLayer = false;
@@ -1522,9 +1962,6 @@ int ROUTER_TOOL::handleLayerSwitch( const TOOL_EVENT& aEvent, bool aForceVia )
             }
         }
     }
-
-    // fixme: P&S supports more than one fixed layer pair. Update the dialog?
-    sizes.ClearLayerPairs();
 
     // Convert blind/buried via to a through hole one, if it goes through all layers
     if( viaType != VIATYPE::THROUGH
@@ -1618,56 +2055,7 @@ int ROUTER_TOOL::handleLayerSwitch( const TOOL_EVENT& aEvent, bool aForceVia )
         }
     }
 
-    sizes.SetViaDiameter( bds.m_ViasMinSize );
-    sizes.SetViaDrill( bds.m_MinThroughDrill );
-
-    if( bds.UseNetClassVia() || viaType == VIATYPE::MICROVIA )
-    {
-        PCB_VIA dummyVia( board() );
-        dummyVia.SetViaType( viaType );
-        dummyVia.SetLayerPair( currentLayer, targetLayer );
-
-        if( !m_router->GetCurrentNets().empty() )
-            dummyVia.SetNet( static_cast<NETINFO_ITEM*>( m_router->GetCurrentNets()[0] ) );
-
-        DRC_CONSTRAINT constraint;
-
-        constraint = bds.m_DRCEngine->EvalRules( VIA_DIAMETER_CONSTRAINT, &dummyVia, nullptr,
-                                                 currentLayer );
-
-        if( !constraint.IsNull() )
-            sizes.SetViaDiameter( constraint.m_Value.Opt() );
-
-        constraint = bds.m_DRCEngine->EvalRules( HOLE_SIZE_CONSTRAINT, &dummyVia, nullptr,
-                                                 currentLayer );
-
-        if( !constraint.IsNull() )
-            sizes.SetViaDrill( constraint.m_Value.Opt() );
-    }
-    else
-    {
-        sizes.SetViaDiameter( bds.GetCurrentViaSize() );
-        sizes.SetViaDrill( bds.GetCurrentViaDrill() );
-    }
-
-    sizes.SetViaType( viaType );
-    sizes.AddLayerPair( m_iface->GetPNSLayerFromBoardLayer( currentLayer ),
-                        m_iface->GetPNSLayerFromBoardLayer( targetLayer ) );
-
-    m_router->UpdateSizes( sizes );
-
-    if( !m_router->IsPlacingVia() )
-        m_router->ToggleViaPlacement();
-
-    if( m_router->RoutingInProgress() )
-    {
-        updateEndItem( aEvent );
-        m_router->Move( m_endSnapPoint, m_endItem );
-    }
-    else
-    {
-        updateStartItem( aEvent );
-    }
+    configureViaPlacement( aEvent, currentLayer, targetLayer, viaType );
 
     return 0;
 }
@@ -1776,6 +2164,8 @@ bool ROUTER_TOOL::finishInteractive()
         m_preRouteExpandableVias.clear();
     }
 
+    clearPendingSmartVia( false );
+
     m_startItem = nullptr;
     m_endItem   = nullptr;
 
@@ -1868,6 +2258,10 @@ void ROUTER_TOOL::performRouting( VECTOR2D aStartPosition )
                 evt->SetMousePosition( last.value() );
             }
 
+            // Rewinding the via stage restores its preview and keeps it replaceable
+            if( m_pendingSmartViaPlaced )
+                m_pendingSmartViaPlaced = false;
+
             updateEndItem( *evt );
             m_router->Move( m_endSnapPoint, m_endItem );
         }
@@ -1930,6 +2324,8 @@ void ROUTER_TOOL::performRouting( VECTOR2D aStartPosition )
             updateEndItem( *evt );
             bool needLayerSwitch = m_router->IsPlacingVia();
             bool forceCommit = false;
+            bool smartViaWasPlaced = m_pendingSmartViaPlaced;
+            VECTOR2I previousStart = m_router->Placer()->CurrentStart();
 
             if( m_router->FixRoute( m_endSnapPoint, m_endItem, false, forceCommit ) )
                 break;
@@ -1937,10 +2333,17 @@ void ROUTER_TOOL::performRouting( VECTOR2D aStartPosition )
             if( needLayerSwitch )
             {
                 switchLayerOnViaPlacement();
+
+                if( m_pendingSmartVia && !m_router->IsPlacingVia() )
+                    m_pendingSmartViaPlaced = true;
             }
             else
             {
                 updateSizesAfterRouterEvent( m_router->GetCurrentLayer(), m_endSnapPoint );
+
+                // Any fixed copper after the transition makes it permanent
+                if( smartViaWasPlaced && m_router->Placer()->CurrentStart() != previousStart )
+                    clearPendingSmartVia( false );
             }
 
             // Synchronize the indicated layer
@@ -1962,6 +2365,13 @@ void ROUTER_TOOL::performRouting( VECTOR2D aStartPosition )
 
             updateEndItem( *evt );
             m_router->Move( m_endSnapPoint, m_endItem );
+        }
+        else if( evt->IsAction( &ACT_SmartViaTop )
+                 || evt->IsAction( &ACT_SmartViaBottom )
+                 || evt->IsAction( &ACT_SmartViaNext )
+                 || evt->IsAction( &ACT_SmartViaPrevious ) )
+        {
+            onSmartViaCommand( *evt );
         }
         else if( evt->IsAction( &ACT_SwitchPosture ) )
         {
@@ -3534,6 +3944,10 @@ void ROUTER_TOOL::setTransitions()
     Go( &ROUTER_TOOL::onViaCommand,           ACT_SelLayerAndPlaceThroughVia.MakeEvent() );
     Go( &ROUTER_TOOL::onViaCommand,           ACT_SelLayerAndPlaceBlindVia.MakeEvent() );
     Go( &ROUTER_TOOL::onViaCommand,           ACT_SelLayerAndPlaceMicroVia.MakeEvent() );
+    Go( &ROUTER_TOOL::onSmartViaCommand,      ACT_SmartViaTop.MakeEvent() );
+    Go( &ROUTER_TOOL::onSmartViaCommand,      ACT_SmartViaBottom.MakeEvent() );
+    Go( &ROUTER_TOOL::onSmartViaCommand,      ACT_SmartViaNext.MakeEvent() );
+    Go( &ROUTER_TOOL::onSmartViaCommand,      ACT_SmartViaPrevious.MakeEvent() );
 
     Go( &ROUTER_TOOL::onLayerCommand,         PCB_ACTIONS::layerTop.MakeEvent() );
     Go( &ROUTER_TOOL::onLayerCommand,         PCB_ACTIONS::layerInner1.MakeEvent() );
