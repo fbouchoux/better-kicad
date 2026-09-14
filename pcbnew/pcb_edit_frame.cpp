@@ -1106,6 +1106,40 @@ void PCB_EDIT_FRAME::onCtrlMouseWheel( wxMouseEvent& aEvent )
     if( routerTool && routerTool->HandleSmartViaWheel( rotation ) )
         return;
 
+    if( !aEvent.ShiftDown() )
+    {
+        LSEQ layerStack = LSET::AllCuMask( GetBoard()->GetCopperLayerCount() ).UIOrder();
+        int  direction = rotation > 0 ? -1 : 1;
+        int  currentIndex = -1;
+
+        for( int i = 0; i < static_cast<int>( layerStack.size() ); ++i )
+        {
+            if( layerStack[i] == GetActiveLayer() )
+            {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        int nextIndex = currentIndex >= 0 ? currentIndex + direction
+                                          : ( direction < 0 ? 0
+                                                            : static_cast<int>( layerStack.size() ) - 1 );
+
+        for( ; nextIndex >= 0 && nextIndex < static_cast<int>( layerStack.size() );
+             nextIndex += direction )
+        {
+            PCB_LAYER_ID layer = layerStack[nextIndex];
+
+            if( GetBoard()->IsLayerVisible( layer ) )
+            {
+                SetActiveLayer( layer );
+                break;
+            }
+        }
+
+        return;
+    }
+
     std::vector<PCB_TRACK*> selectedTracks;
 
     for( PCB_TRACK* track : GetBoard()->Tracks() )
@@ -1118,7 +1152,7 @@ void PCB_EDIT_FRAME::onCtrlMouseWheel( wxMouseEvent& aEvent )
         return;
     }
 
-    const int step = pcbIUScale.mmToIU( aEvent.ShiftDown() ? 0.01 : 0.05 );
+    const int step = pcbIUScale.mmToIU( 0.01 );
     const int minimumWidth = pcbIUScale.mmToIU( 0.01 );
     const int direction = rotation > 0 ? 1 : -1;
     BOARD_COMMIT commit( this );
