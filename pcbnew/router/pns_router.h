@@ -184,7 +184,8 @@ public:
     bool Move( const VECTOR2I& aP, ITEM* aItem );
     bool Finish();
     bool ContinueFromEnd( ITEM** aNewStartItem );
-    bool FixRoute( const VECTOR2I& aP, ITEM* aItem, bool aForceFinish, bool aForceCommit );
+    bool FixRoute( const VECTOR2I& aP, ITEM* aItem, bool aForceFinish, bool aForceCommit,
+                   bool aContinueAfterVia = false );
     void BreakSegmentOrArc( ITEM *aItem, const VECTOR2I& aP );
 
     std::optional<VECTOR2I> UndoLastSegment();

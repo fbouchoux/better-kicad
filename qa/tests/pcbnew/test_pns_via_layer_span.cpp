@@ -142,6 +142,82 @@ BOOST_FIXTURE_TEST_CASE( DiffPairThroughViaSpansWholeBoard, VIA_LAYER_SPAN_FIXTU
 
 
 /**
+ * A Smart Via placed directly at the routing start has no track segments.  It must still leave
+ * the line placer active so the route can continue on the requested destination layer.
+ */
+BOOST_FIXTURE_TEST_CASE( ViaOnlyTransitionCanContinueRouting, VIA_LAYER_SPAN_FIXTURE )
+{
+    KI_TEST::LoadBoard( m_settingsManager, "issue24772/fw16_MCIO8i", m_board );
+    BOOST_REQUIRE( m_board );
+
+    FOOTPRINT* connector = m_board->FindFootprintByReference( wxT( "MCIO1" ) );
+    BOOST_REQUIRE( connector );
+
+    PAD* pad = connector->FindPadByNumber( wxT( "B5" ) );
+    BOOST_REQUIRE( pad );
+
+    PNS::ROUTER           router;
+    PNS_KICAD_IFACE_BASE  iface;
+    PNS::ROUTING_SETTINGS routingSettings( nullptr, "" );
+
+    iface.SetBoard( m_board.get() );
+    router.SetInterface( &iface );
+    router.ClearWorld();
+    router.SyncWorld();
+    router.LoadSettings( &routingSettings );
+    router.SetMode( PNS::PNS_MODE_ROUTE_SINGLE );
+
+    const int      pnsFront = iface.GetPNSLayerFromBoardLayer( F_Cu );
+    const int      pnsTarget = iface.GetPNSLayerFromBoardLayer( In1_Cu );
+    const VECTOR2I startPoint = pad->GetPosition();
+    PNS::ITEM*     startItem = router.GetWorld()->FindItemByParent( pad );
+
+    BOOST_REQUIRE( startItem );
+
+    PNS::SIZES_SETTINGS sizes( router.Sizes() );
+    iface.SetStartLayerFromPCBNew( F_Cu );
+    BOOST_REQUIRE( iface.ImportSizes( sizes, startItem, nullptr, startPoint ) );
+
+    sizes.ClearLayerPairs();
+    sizes.AddLayerPair( pnsFront, pnsTarget );
+    sizes.SetViaType( VIATYPE::THROUGH );
+    router.UpdateSizes( sizes );
+    router.Settings().SetAllowDRCViolations( true );
+
+    BOOST_REQUIRE( router.StartRouting( startPoint, startItem, pnsFront ) );
+    router.ToggleViaPlacement();
+    BOOST_REQUIRE( router.Move( startPoint, startItem ) );
+
+    // Smart Via requests continuation; the usual lone-via placement remains a terminal action.
+    BOOST_CHECK( !router.FixRoute( startPoint, startItem, false, false, true ) );
+    BOOST_CHECK( router.RoutingInProgress() );
+    BOOST_CHECK( !router.IsPlacingVia() );
+    BOOST_REQUIRE( router.SwitchLayer( pnsTarget ) );
+    BOOST_CHECK_EQUAL( router.GetCurrentLayer(), pnsTarget );
+
+    const VECTOR2I endPoint = startPoint + VECTOR2I( 0, pcbIUScale.mmToIU( 5.0 ) );
+    BOOST_REQUIRE( router.Move( endPoint, nullptr ) );
+    BOOST_CHECK_EQUAL( router.Placer()->CurrentStart(), startPoint );
+    BOOST_CHECK_EQUAL( router.Placer()->CurrentLayer(), pnsTarget );
+
+    bool hasTargetTrace = false;
+
+    for( const PNS::ITEM* item : router.Placer()->Traces().CItems() )
+    {
+        if( item->Kind() == PNS::ITEM::LINE_T )
+        {
+            const PNS::LINE* line = static_cast<const PNS::LINE*>( item );
+            hasTargetTrace = line->Layer() == pnsTarget && line->SegmentCount() > 0;
+        }
+    }
+
+    BOOST_CHECK( hasTargetTrace );
+
+    router.StopRouting();
+}
+
+
+/**
  * A via holds its copper span in the primary drill layers, so the router must not write the hole
  * layers back over the layer pair.  This pins the premise for dropping that write back, that the
  * two ranges are the same range for every via the router knows about.

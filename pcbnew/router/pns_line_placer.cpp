@@ -1493,7 +1493,8 @@ bool LINE_PLACER::Move( const VECTOR2I& aP, ITEM* aEndItem )
 }
 
 
-bool LINE_PLACER::FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish )
+bool LINE_PLACER::FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish,
+                            bool aContinueAfterVia )
 {
     bool fixAll  = Settings().GetFixAllSegments();
     bool realEnd = false;
@@ -1564,14 +1565,44 @@ bool LINE_PLACER::FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinis
             auto newVia = Clone( pl.Via() );
             newVia->ResetUid();
             m_lastNode->Add( std::move( newVia ) );
-            m_shove->AddLockedSpringbackNode( m_lastNode );
         }
 
-        m_currentNode = nullptr;
+        if( !aContinueAfterVia || aForceFinish || !m_lastNode )
+        {
+            if( m_lastNode )
+                m_shove->AddLockedSpringbackNode( m_lastNode );
 
-        m_idle = true;
+            m_currentNode = nullptr;
+            m_idle = true;
+            m_placementCorrect = true;
+            return true;
+        }
+
+        // A Smart Via is a layer transition, not a route endpoint.  Keep the placer alive when
+        // the transition has no track segment, as happens for a via placed at the route start.
+        m_currentStart = m_p_start;
+        m_fixedTail.AddStage( m_fixStart, m_currentLayer, m_placingVia, m_direction,
+                              m_currentNode );
+        m_fixStart = m_currentStart;
+        m_startItem = nullptr;
+        m_placingVia = false;
+        m_chainedPlacement = false;
+        m_p_start = m_currentStart;
+        m_direction = m_initial_direction;
+        m_head.Line().Clear();
+        m_tail.Line().Clear();
+        m_head.RemoveVia();
+        m_tail.RemoveVia();
+        m_currentNode = m_lastNode;
+        m_lastNode = m_lastNode->Branch();
+        m_shove->AddLockedSpringbackNode( m_currentNode );
+        m_mouseTrailTracer.Clear();
+        m_mouseTrailTracer.SetTolerance( m_head.Width() );
+        m_mouseTrailTracer.AddTrailPoint( m_currentStart );
+        m_mouseTrailTracer.SetDefaultDirections( DIRECTION_45::UNDEFINED,
+                                                 DIRECTION_45::UNDEFINED );
         m_placementCorrect = true;
-        return true;
+        return false;
     }
 
     VECTOR2I p_pre_last = l.CLastPoint();
@@ -1580,7 +1611,8 @@ bool LINE_PLACER::FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinis
     if( l.PointCount() > 2 )
         p_pre_last = l.CPoints()[ l.PointCount() - 2 ];
 
-    if( aEndItem && m_currentNet && m_currentNet == aEndItem->Net() )
+    if( ( !aContinueAfterVia || !pl.EndsWithVia() )
+        && aEndItem && m_currentNet && m_currentNet == aEndItem->Net() )
         realEnd = true;
 
     if( aForceFinish )

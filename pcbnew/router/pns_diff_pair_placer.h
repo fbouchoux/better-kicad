@@ -77,7 +77,8 @@ public:
      *         violating design rules.  In such cases, the track is only committed if
      *         #Settings.CanViolateDRC() is on.
      */
-    bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish ) override;
+    bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish,
+                   bool aContinueAfterVia ) override;
 
     /// @copydoc PLACEMENT_ALGO::CommitPlacement()
     bool CommitPlacement() override;

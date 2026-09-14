@@ -56,7 +56,8 @@ public:
     virtual bool Move( const VECTOR2I& aP, ITEM* aEndItem ) override;
 
     /// @copydoc PLACEMENT_ALGO::FixRoute()
-    virtual bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish = false ) override;
+    virtual bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish = false,
+                           bool aContinueAfterVia = false ) override;
 
     /// @copydoc PLACEMENT_ALGO::CommitPlacement()
     bool CommitPlacement() override;

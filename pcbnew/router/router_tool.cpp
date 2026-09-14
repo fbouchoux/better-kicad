@@ -2373,7 +2373,8 @@ void ROUTER_TOOL::performRouting( VECTOR2D aStartPosition )
             bool smartViaWasPlaced = m_pendingSmartViaPlaced;
             VECTOR2I previousStart = m_router->Placer()->CurrentStart();
 
-            if( m_router->FixRoute( m_endSnapPoint, m_endItem, false, forceCommit ) )
+            if( m_router->FixRoute( m_endSnapPoint, m_endItem, false, forceCommit,
+                                    m_pendingSmartVia ) )
                 break;
 
             if( needLayerSwitch )

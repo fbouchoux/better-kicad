@@ -1226,7 +1226,8 @@ void DIFF_PAIR_PLACER::UpdateSizes( const SIZES_SETTINGS& aSizes )
 }
 
 
-bool DIFF_PAIR_PLACER::FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish )
+bool DIFF_PAIR_PLACER::FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish,
+                                 bool )
 {
     if( !m_fitOk && !Settings().AllowDRCViolations() )
         return false;

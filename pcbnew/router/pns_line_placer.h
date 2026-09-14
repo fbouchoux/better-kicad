@@ -135,7 +135,8 @@ public:
      *         violating design rules.  In such cases, the track is only committed if
      *         CanViolateDRC() is on.
      */
-    bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish ) override;
+    bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish,
+                   bool aContinueAfterVia ) override;
 
     std::optional<VECTOR2I> UnfixRoute() override;
 

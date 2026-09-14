@@ -72,11 +72,13 @@ public:
      *
      * Commits the currently routed items to the parent node, taking
      * aP as the final end point and aEndItem as the final anchor (if provided).
-     * @return true, if route has been committed. May return false if the routing
-     * result is violating design rules - in such case, the track is only committed
-     * if Settings.CanViolateDRC() is on.
+     * aContinueAfterVia keeps placement active after committing a via, even when it reaches an
+     * existing same-net item or has no preceding track segment.
+     * @return true if the route has finished.  May return false if routing should continue or if
+     * the result violates design rules and Settings.CanViolateDRC() is off.
      */
-    virtual bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish = false ) = 0;
+    virtual bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish = false,
+                           bool aContinueAfterVia = false ) = 0;
 
     virtual std::optional<VECTOR2I> UnfixRoute() { return std::nullopt; };
 
