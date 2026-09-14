@@ -1,0 +1,178 @@
+{
+  "version": "0.2.1",
+  "defaults": {},
+  "configurations": [
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "kicad.exe (kicad\\kicad.exe)",
+      "program": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\kicad\\kicad.exe",
+      "cwd": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\kicad",
+      "debugType": "native",
+      "name": "KiCad Manager (RelWithDebInfo explicit)",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "PYTHONHOME": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\vcpkg_installed\\x64-windows\\bin;${projectDir}\\build\\msvc-win64-relwithdebinfo\\common;${projectDir}\\build\\msvc-win64-relwithdebinfo\\api;${projectDir}\\build\\msvc-win64-relwithdebinfo\\common\\gal;${projectDir}\\build\\msvc-win64-relwithdebinfo\\pcbnew;${projectDir}\\build\\msvc-win64-relwithdebinfo\\eeschema;${projectDir}\\build\\msvc-win64-relwithdebinfo\\gerbview;${projectDir}\\build\\msvc-win64-relwithdebinfo\\3d-viewer\\3d_cache\\sg;${projectDir}\\build\\msvc-win64-relwithdebinfo\\plugins\\3d\\idf;${projectDir}\\build\\msvc-win64-relwithdebinfo\\plugins\\3d\\oce;${projectDir}\\build\\msvc-win64-relwithdebinfo\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "pcbnew.exe (pcbnew\\pcbnew.exe)",
+      "program": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\pcbnew\\pcbnew.exe",
+      "cwd": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\pcbnew",
+      "debugType": "native",
+      "name": "PCB Editor (RelWithDebInfo explicit)",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "PYTHONHOME": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${projectDir}\\build\\msvc-win64-relwithdebinfo\\vcpkg_installed\\x64-windows\\bin;${projectDir}\\build\\msvc-win64-relwithdebinfo\\common;${projectDir}\\build\\msvc-win64-relwithdebinfo\\api;${projectDir}\\build\\msvc-win64-relwithdebinfo\\common\\gal;${projectDir}\\build\\msvc-win64-relwithdebinfo\\pcbnew;${projectDir}\\build\\msvc-win64-relwithdebinfo\\eeschema;${projectDir}\\build\\msvc-win64-relwithdebinfo\\gerbview;${projectDir}\\build\\msvc-win64-relwithdebinfo\\3d-viewer\\3d_cache\\sg;${projectDir}\\build\\msvc-win64-relwithdebinfo\\plugins\\3d\\idf;${projectDir}\\build\\msvc-win64-relwithdebinfo\\plugins\\3d\\oce;${projectDir}\\build\\msvc-win64-relwithdebinfo\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "kicad.exe (kicad\\kicad.exe)",
+      "program": "${projectDir}\\build\\msvc-win64-asan\\kicad\\kicad.exe",
+      "cwd": "${projectDir}\\build\\msvc-win64-asan\\kicad",
+      "debugType": "native",
+      "name": "KiCad Manager (ASan explicit)",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "ASAN_OPTIONS": "detect_stack_use_after_return=0",
+        "ASAN_SAVE_DUMPS": "${projectDir}\\build\\msvc-win64-asan\\asan-kicad.dmp",
+        "PYTHONHOME": "${projectDir}\\build\\msvc-win64-asan\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${projectDir}\\build\\msvc-win64-asan\\pcbnew;${projectDir}\\scripting",
+        "PATH": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64;${projectDir}\\build\\msvc-win64-asan\\vcpkg_installed\\x64-windows\\bin;${projectDir}\\build\\msvc-win64-asan\\common;${projectDir}\\build\\msvc-win64-asan\\api;${projectDir}\\build\\msvc-win64-asan\\common\\gal;${projectDir}\\build\\msvc-win64-asan\\pcbnew;${projectDir}\\build\\msvc-win64-asan\\eeschema;${projectDir}\\build\\msvc-win64-asan\\gerbview;${projectDir}\\build\\msvc-win64-asan\\3d-viewer\\3d_cache\\sg;${projectDir}\\build\\msvc-win64-asan\\plugins\\3d\\idf;${projectDir}\\build\\msvc-win64-asan\\plugins\\3d\\oce;${projectDir}\\build\\msvc-win64-asan\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "pcbnew.exe (pcbnew\\pcbnew.exe)",
+      "program": "${projectDir}\\build\\msvc-win64-asan\\pcbnew\\pcbnew.exe",
+      "cwd": "${projectDir}\\build\\msvc-win64-asan\\pcbnew",
+      "debugType": "native",
+      "name": "PCB Editor (ASan explicit)",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "ASAN_OPTIONS": "detect_stack_use_after_return=0",
+        "ASAN_SAVE_DUMPS": "${projectDir}\\build\\msvc-win64-asan\\asan-pcbnew.dmp",
+        "PYTHONHOME": "${projectDir}\\build\\msvc-win64-asan\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${projectDir}\\build\\msvc-win64-asan\\pcbnew;${projectDir}\\scripting",
+        "PATH": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.44.35207\\bin\\Hostx64\\x64;${projectDir}\\build\\msvc-win64-asan\\vcpkg_installed\\x64-windows\\bin;${projectDir}\\build\\msvc-win64-asan\\common;${projectDir}\\build\\msvc-win64-asan\\api;${projectDir}\\build\\msvc-win64-asan\\common\\gal;${projectDir}\\build\\msvc-win64-asan\\pcbnew;${projectDir}\\build\\msvc-win64-asan\\eeschema;${projectDir}\\build\\msvc-win64-asan\\gerbview;${projectDir}\\build\\msvc-win64-asan\\3d-viewer\\3d_cache\\sg;${projectDir}\\build\\msvc-win64-asan\\plugins\\3d\\idf;${projectDir}\\build\\msvc-win64-asan\\plugins\\3d\\oce;${projectDir}\\build\\msvc-win64-asan\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "kicad.exe (kicad\\kicad.exe)",
+      "name": "KiCad Manager",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "ASAN_SAVE_DUMPS": "${cmake.binaryDir}\\asan-kicad.dmp",
+        "PYTHONHOME": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${cmake.binaryDir}\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\bin;${cmake.binaryDir}\\common;${cmake.binaryDir}\\api;${cmake.binaryDir}\\common\\gal;${cmake.binaryDir}\\pcbnew;${cmake.binaryDir}\\eeschema;${cmake.binaryDir}\\gerbview;${cmake.binaryDir}\\3d-viewer\\3d_cache\\sg;${cmake.binaryDir}\\plugins\\3d\\idf;${cmake.binaryDir}\\plugins\\3d\\oce;${cmake.binaryDir}\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "pcbnew.exe (pcbnew\\pcbnew.exe)",
+      "name": "PCB Editor (pcbnew)",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "ASAN_SAVE_DUMPS": "${cmake.binaryDir}\\asan-pcbnew.dmp",
+        "PYTHONHOME": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${cmake.binaryDir}\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\bin;${cmake.binaryDir}\\common;${cmake.binaryDir}\\api;${cmake.binaryDir}\\common\\gal;${cmake.binaryDir}\\pcbnew;${cmake.binaryDir}\\eeschema;${cmake.binaryDir}\\gerbview;${cmake.binaryDir}\\3d-viewer\\3d_cache\\sg;${cmake.binaryDir}\\plugins\\3d\\idf;${cmake.binaryDir}\\plugins\\3d\\oce;${cmake.binaryDir}\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "eeschema.exe (eeschema\\eeschema.exe)",
+      "name": "Schematic Editor (eeschema)",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "PYTHONHOME": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${cmake.binaryDir}\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\bin;${cmake.binaryDir}\\common;${cmake.binaryDir}\\api;${cmake.binaryDir}\\common\\gal;${cmake.binaryDir}\\pcbnew;${cmake.binaryDir}\\eeschema;${cmake.binaryDir}\\gerbview;${cmake.binaryDir}\\3d-viewer\\3d_cache\\sg;${cmake.binaryDir}\\plugins\\3d\\idf;${cmake.binaryDir}\\plugins\\3d\\oce;${cmake.binaryDir}\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "gerbview.exe (gerbview\\gerbview.exe)",
+      "name": "Gerber Viewer (gerbview)",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "PYTHONHOME": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${cmake.binaryDir}\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\bin;${cmake.binaryDir}\\common;${cmake.binaryDir}\\api;${cmake.binaryDir}\\common\\gal;${cmake.binaryDir}\\pcbnew;${cmake.binaryDir}\\eeschema;${cmake.binaryDir}\\gerbview;${cmake.binaryDir}\\3d-viewer\\3d_cache\\sg;${cmake.binaryDir}\\plugins\\3d\\idf;${cmake.binaryDir}\\plugins\\3d\\oce;${cmake.binaryDir}\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "pl_editor.exe (pagelayout_editor\\pl_editor.exe)",
+      "name": "Page Layout Editor",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "PYTHONHOME": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${cmake.binaryDir}\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\bin;${cmake.binaryDir}\\common;${cmake.binaryDir}\\api;${cmake.binaryDir}\\common\\gal;${cmake.binaryDir}\\pcbnew;${cmake.binaryDir}\\eeschema;${cmake.binaryDir}\\gerbview;${cmake.binaryDir}\\3d-viewer\\3d_cache\\sg;${cmake.binaryDir}\\plugins\\3d\\idf;${cmake.binaryDir}\\plugins\\3d\\oce;${cmake.binaryDir}\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "pcb_calculator.exe (pcb_calculator\\pcb_calculator.exe)",
+      "name": "PCB Calculator",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "PYTHONHOME": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${cmake.binaryDir}\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\bin;${cmake.binaryDir}\\common;${cmake.binaryDir}\\api;${cmake.binaryDir}\\common\\gal;${cmake.binaryDir}\\pcbnew;${cmake.binaryDir}\\eeschema;${cmake.binaryDir}\\gerbview;${cmake.binaryDir}\\3d-viewer\\3d_cache\\sg;${cmake.binaryDir}\\plugins\\3d\\idf;${cmake.binaryDir}\\plugins\\3d\\oce;${cmake.binaryDir}\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    },
+    {
+      "type": "default",
+      "project": "CMakeLists.txt",
+      "projectTarget": "bitmap2component.exe (bitmap2component\\bitmap2component.exe)",
+      "name": "Bitmap to Component",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "env": {
+        "KICAD_RUN_FROM_BUILD_DIR": "1",
+        "KICAD_USE_EXTERNAL_PYTHONHOME": "1",
+        "PYTHONHOME": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\tools\\python3",
+        "PYTHONPATH": "${cmake.binaryDir}\\pcbnew;${projectDir}\\scripting",
+        "PATH": "${cmake.binaryDir}\\vcpkg_installed\\x64-windows\\bin;${cmake.binaryDir}\\common;${cmake.binaryDir}\\api;${cmake.binaryDir}\\common\\gal;${cmake.binaryDir}\\pcbnew;${cmake.binaryDir}\\eeschema;${cmake.binaryDir}\\gerbview;${cmake.binaryDir}\\3d-viewer\\3d_cache\\sg;${cmake.binaryDir}\\plugins\\3d\\idf;${cmake.binaryDir}\\plugins\\3d\\oce;${cmake.binaryDir}\\plugins\\3d\\vrml;${env.PATH}"
+      }
+    }
+  ]
+}
