@@ -96,6 +96,13 @@ public:
      */
     bool RoutingInProgress();
 
+    /**
+     * Step a Smart Via toward the bottom or top of the copper stack while routing.
+     *
+     * @return true when the wheel event belongs to an active single-track route.
+     */
+    bool HandleSmartViaWheel( int aRotation );
+
     void setTransitions() override;
 
     // A filter for narrowing a collection representing a simple corner

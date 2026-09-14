@@ -768,7 +768,7 @@ void PCB_EDIT_FRAME::OnCrossProbeFlashTimer( wxTimerEvent& aEvent )
 
 PCB_EDIT_FRAME::~PCB_EDIT_FRAME()
 {
-    GetCanvas()->Unbind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onTrackWidthWheel, this );
+    GetCanvas()->Unbind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onCtrlMouseWheel, this );
 
     // Always ensure that we are unregistered even in a close without graceful doCloseWindow()
     if( GetBoard() )
@@ -1084,17 +1084,27 @@ void PCB_EDIT_FRAME::setupTools()
     m_toolManager->InvokeTool( "common.InteractiveSelection" );
 
     // Bound after the generic view controls so this handler gets first refusal on wheel events.
-    GetCanvas()->Bind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onTrackWidthWheel, this );
+    GetCanvas()->Bind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onCtrlMouseWheel, this );
 }
 
 
-void PCB_EDIT_FRAME::onTrackWidthWheel( wxMouseEvent& aEvent )
+void PCB_EDIT_FRAME::onCtrlMouseWheel( wxMouseEvent& aEvent )
 {
     if( !aEvent.ControlDown() || aEvent.GetWheelAxis() != wxMOUSE_WHEEL_VERTICAL )
     {
         aEvent.Skip();
         return;
     }
+
+    const int rotation = aEvent.GetWheelRotation();
+
+    if( rotation == 0 )
+        return;
+
+    ROUTER_TOOL* routerTool = m_toolManager->GetTool<ROUTER_TOOL>();
+
+    if( routerTool && routerTool->HandleSmartViaWheel( rotation ) )
+        return;
 
     std::vector<PCB_TRACK*> selectedTracks;
 
@@ -1107,11 +1117,6 @@ void PCB_EDIT_FRAME::onTrackWidthWheel( wxMouseEvent& aEvent )
         aEvent.Skip();
         return;
     }
-
-    const int rotation = aEvent.GetWheelRotation();
-
-    if( rotation == 0 )
-        return;
 
     const int step = pcbIUScale.mmToIU( aEvent.ShiftDown() ? 0.01 : 0.05 );
     const int minimumWidth = pcbIUScale.mmToIU( 0.01 );

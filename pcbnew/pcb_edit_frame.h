@@ -733,12 +733,13 @@ protected:
     void setupUIConditions() override;
 
     /**
-     * Adjust selected copper track and arc widths from Ctrl+mouse-wheel.
+     * Handle PCB editor Ctrl+mouse-wheel actions.
      *
-     * Ctrl+wheel changes widths by 0.05 mm and Ctrl+Shift+wheel uses a 0.01 mm step.  The event
-     * is passed on to the normal view controls when no eligible item is selected.
+     * During interactive routing the wheel steps Smart Vias through the copper stack. Otherwise,
+     * it changes selected track widths by 0.05 mm, or 0.01 mm with Shift. The event is passed on
+     * to the normal view controls when neither operation applies.
      */
-    void onTrackWidthWheel( wxMouseEvent& aEvent );
+    void onCtrlMouseWheel( wxMouseEvent& aEvent );
 
     /**
      * Switch currently used canvas (Cairo / OpenGL).

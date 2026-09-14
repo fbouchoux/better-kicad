@@ -1676,7 +1676,11 @@ int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
         break;
     }
 
-    if( targetLayer == UNDEFINED_LAYER || targetLayer == startLayer )
+    // Leave the placement state unchanged at the edge of the copper stack; stepping never wraps.
+    if( targetLayer == UNDEFINED_LAYER )
+        return 0;
+
+    if( targetLayer == startLayer )
     {
         if( replacing && m_router->IsPlacingVia() )
             m_router->ToggleViaPlacement();
@@ -2561,6 +2565,23 @@ PNS::PNS_MODE ROUTER_TOOL::GetRouterMode()
 bool ROUTER_TOOL::RoutingInProgress()
 {
     return m_router->RoutingInProgress();
+}
+
+
+bool ROUTER_TOOL::HandleSmartViaWheel( int aRotation )
+{
+    if( aRotation == 0 || !IsToolActive() || !m_router->RoutingInProgress()
+        || m_router->GetState() != PNS::ROUTER::ROUTE_TRACK || !m_router->Placer()
+        || m_router->Mode() != PNS::PNS_MODE_ROUTE_SINGLE )
+    {
+        return false;
+    }
+
+    const TOOL_ACTION& action = aRotation > 0 ? ACT_SmartViaPrevious : ACT_SmartViaNext;
+    TOOL_EVENT         event = action.MakeEvent();
+    event.SetMousePosition( controls()->GetMousePosition() );
+    onSmartViaCommand( event );
+    return true;
 }
 
 
