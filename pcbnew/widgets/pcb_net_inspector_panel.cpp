@@ -61,6 +61,19 @@ PCB_NET_INSPECTOR_PANEL::PCB_NET_INSPECTOR_PANEL( wxWindow* parent, PCB_EDIT_FRA
 
     m_netsList->AssociateModel( &*m_dataModel );
 
+    m_sizerOuter->SetItemPosition( m_configureBtn, wxGBPosition( 0, 3 ) );
+    m_sizerOuter->SetItemSpan( m_netsList, wxGBSpan( 1, 4 ) );
+
+    m_ratsnestFilterBtn = new BITMAP_BUTTON( this, wxID_ANY, wxDefaultPosition, wxDefaultSize, 0 );
+    m_ratsnestFilterBtn->SetIsCheckButton();
+    m_ratsnestFilterBtn->SetBitmap( KiBitmapBundle( BITMAPS::general_ratsnest ) );
+    m_ratsnestFilterBtn->SetPadding( 2 );
+    m_ratsnestFilterBtn->SetToolTip(
+            _( "Show ratsnest for selected nets only; show all when none are selected" ) );
+    m_sizerOuter->Add( m_ratsnestFilterBtn, wxGBPosition( 0, 2 ), wxGBSpan( 1, 1 ),
+                       wxALIGN_CENTER_VERTICAL | wxLEFT, 3 );
+    Layout();
+
     // Rebuild nets list
     buildNetsList( true );
 
@@ -80,7 +93,12 @@ PCB_NET_INSPECTOR_PANEL::PCB_NET_INSPECTOR_PANEL( wxWindow* parent, PCB_EDIT_FRA
     m_netsList->Bind( wxEVT_DATAVIEW_COLUMN_HEADER_RIGHT_CLICK, &PCB_NET_INSPECTOR_PANEL::OnHeaderContextMenu, this );
     m_netsList->Bind( wxEVT_DATAVIEW_ITEM_CONTEXT_MENU, &PCB_NET_INSPECTOR_PANEL::OnNetsListContextMenu, this );
     m_netsList->Bind( wxEVT_DATAVIEW_ITEM_ACTIVATED, &PCB_NET_INSPECTOR_PANEL::OnNetsListItemActivated, this );
+    m_netsList->Bind( wxEVT_DATAVIEW_SELECTION_CHANGED,
+                      &PCB_NET_INSPECTOR_PANEL::OnNetsListSelectionChanged, this );
     m_netsList->Bind( wxEVT_DATAVIEW_COLUMN_SORTED, &PCB_NET_INSPECTOR_PANEL::OnColumnSorted, this );
+    m_ratsnestFilterBtn->Bind( wxEVT_BUTTON, &PCB_NET_INSPECTOR_PANEL::OnRatsnestFilterButton, this );
+
+    updateRatsnestFilter();
 }
 
 PCB_NET_INSPECTOR_PANEL::~PCB_NET_INSPECTOR_PANEL()
@@ -98,7 +116,10 @@ PCB_NET_INSPECTOR_PANEL::~PCB_NET_INSPECTOR_PANEL()
     m_netsList->Unbind( wxEVT_DATAVIEW_COLUMN_HEADER_RIGHT_CLICK, &PCB_NET_INSPECTOR_PANEL::OnHeaderContextMenu, this );
     m_netsList->Unbind( wxEVT_DATAVIEW_ITEM_CONTEXT_MENU, &PCB_NET_INSPECTOR_PANEL::OnNetsListContextMenu, this );
     m_netsList->Unbind( wxEVT_DATAVIEW_ITEM_ACTIVATED, &PCB_NET_INSPECTOR_PANEL::OnNetsListItemActivated, this );
+    m_netsList->Unbind( wxEVT_DATAVIEW_SELECTION_CHANGED,
+                        &PCB_NET_INSPECTOR_PANEL::OnNetsListSelectionChanged, this );
     m_netsList->Unbind( wxEVT_DATAVIEW_COLUMN_SORTED, &PCB_NET_INSPECTOR_PANEL::OnColumnSorted, this );
+    m_ratsnestFilterBtn->Unbind( wxEVT_BUTTON, &PCB_NET_INSPECTOR_PANEL::OnRatsnestFilterButton, this );
 }
 
 
@@ -493,6 +514,8 @@ void PCB_NET_INSPECTOR_PANEL::buildNetsList( const bool rebuildColumns )
     m_filterByNetclass = cfg->filter_by_netclass;
     m_showZeroPadNets = cfg->show_zero_pad_nets;
     m_showTimeDomainDetails = cfg->show_time_domain_details;
+    m_filterRatsnestBySelection = cfg->filter_ratsnest_by_selection;
+    m_ratsnestFilterBtn->Check( m_filterRatsnestBySelection );
     m_groupByNetclass = cfg->group_by_netclass;
     m_groupByNetChain = cfg->group_by_net_chain;
     m_groupByConstraint = cfg->group_by_constraint;
@@ -626,6 +649,7 @@ void PCB_NET_INSPECTOR_PANEL::buildNetsList( const bool rebuildColumns )
     }
 
     m_inBuildNetsList = false;
+    updateRatsnestFilter();
 }
 
 
@@ -1205,6 +1229,7 @@ void PCB_NET_INSPECTOR_PANEL::OnShowPanel()
 {
     buildNetsList();
     OnBoardHighlightNetChanged( *m_board );
+    updateRatsnestFilter();
 }
 
 
@@ -1705,6 +1730,61 @@ void PCB_NET_INSPECTOR_PANEL::OnNetsListItemActivated( wxDataViewEvent& event )
 }
 
 
+void PCB_NET_INSPECTOR_PANEL::OnNetsListSelectionChanged( wxDataViewEvent& event )
+{
+    if( !m_inBuildNetsList )
+        updateRatsnestFilter();
+
+    event.Skip();
+}
+
+
+void PCB_NET_INSPECTOR_PANEL::OnRatsnestFilterButton( wxCommandEvent& event )
+{
+    m_filterRatsnestBySelection = m_ratsnestFilterBtn->IsChecked();
+    SaveSettings();
+    updateRatsnestFilter();
+}
+
+
+void PCB_NET_INSPECTOR_PANEL::updateRatsnestFilter()
+{
+    std::set<int> netCodes;
+    bool          filterActive = m_filterRatsnestBySelection && m_netsList->HasSelection();
+
+    if( filterActive )
+    {
+        wxDataViewItemArray selections;
+        m_netsList->GetSelections( selections );
+
+        for( const wxDataViewItem& selection : selections )
+        {
+            const LIST_ITEM* item = static_cast<const LIST_ITEM*>( selection.GetID() );
+
+            if( item->GetIsGroup() )
+            {
+                for( auto child = item->ChildrenBegin(); child != item->ChildrenEnd(); ++child )
+                {
+                    if( ( *child )->GetNetCode() > 0 )
+                        netCodes.insert( ( *child )->GetNetCode() );
+                }
+            }
+            else if( item->GetNetCode() > 0 )
+            {
+                netCodes.insert( item->GetNetCode() );
+            }
+        }
+    }
+
+    auto* renderSettings = static_cast<KIGFX::PCB_RENDER_SETTINGS*>(
+            m_frame->GetCanvas()->GetView()->GetPainter()->GetSettings() );
+
+    renderSettings->SetRatsnestFilter( filterActive, std::move( netCodes ) );
+    m_frame->GetCanvas()->RedrawRatsnest();
+    m_frame->GetCanvas()->Refresh();
+}
+
+
 void PCB_NET_INSPECTOR_PANEL::highlightSelectedNets()
 {
     // ignore selection changes while the whole list is being rebuilt.
@@ -1971,6 +2051,8 @@ void PCB_NET_INSPECTOR_PANEL::onDeleteSelectedNet()
 
 void PCB_NET_INSPECTOR_PANEL::OnLanguageChangedImpl()
 {
+    m_ratsnestFilterBtn->SetToolTip(
+            _( "Show ratsnest for selected nets only; show all when none are selected" ) );
     SaveSettings();
     buildNetsList( true );
     m_dataModel->updateAllItems();
@@ -2019,6 +2101,7 @@ void PCB_NET_INSPECTOR_PANEL::SaveSettings()
     cfg.show_zero_pad_nets = m_showZeroPadNets;
     cfg.show_unconnected_nets = m_showUnconnectedNets;
     cfg.show_time_domain_details = m_showTimeDomainDetails;
+    cfg.filter_ratsnest_by_selection = m_filterRatsnestBySelection;
 
     // Grid sorting
     wxDataViewColumn* sortingCol = m_netsList->GetSortingColumn();

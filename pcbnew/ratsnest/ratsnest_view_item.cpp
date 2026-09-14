@@ -78,6 +78,8 @@ void RATSNEST_VIEW_ITEM::ViewDraw( int aLayer, KIGFX::VIEW* aView ) const
 
     std::set<int>        highlightedNets = rs->GetHighlightNetCodes();
     const std::set<int>& hiddenNets      = rs->GetHiddenNets();
+    const std::set<int>& filteredNets    = rs->GetRatsnestFilterNets();
+    const bool           filterActive    = rs->IsRatsnestFilterActive();
 
     COLOR4D    defaultColor = rs->GetColor( nullptr, LAYER_RATSNEST );
     COLOR4D    color = defaultColor;
@@ -127,7 +129,7 @@ void RATSNEST_VIEW_ITEM::ViewDraw( int aLayer, KIGFX::VIEW* aView ) const
     // Draw the "dynamic" ratsnest (i.e. for objects that may be currently being moved)
     for( const RN_DYNAMIC_LINE& l : m_data->GetLocalRatsnest() )
     {
-        if( hiddenNets.count( l.netCode ) )
+        if( hiddenNets.count( l.netCode ) || ( filterActive && !filteredNets.count( l.netCode ) ) )
             continue;
 
         const NETCLASS*     nc = nullptr;
@@ -179,7 +181,7 @@ void RATSNEST_VIEW_ITEM::ViewDraw( int aLayer, KIGFX::VIEW* aView ) const
 
     for( int i = 1 /* skip "No Net" at [0] */; i < m_data->GetNetCount(); ++i )
     {
-        if( hiddenNets.count( i ) )
+        if( hiddenNets.count( i ) || ( filterActive && !filteredNets.count( i ) ) )
             continue;
 
         RN_NET* net = m_data->GetRatsnestForNet( i );

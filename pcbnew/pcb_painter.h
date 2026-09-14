@@ -144,6 +144,15 @@ public:
     std::set<int>& GetHiddenNets() { return m_hiddenNets; }
     const std::set<int>& GetHiddenNets() const { return m_hiddenNets; }
 
+    void SetRatsnestFilter( bool aActive, std::set<int> aNetCodes )
+    {
+        m_ratsnestFilterActive = aActive;
+        m_ratsnestFilterNets = std::move( aNetCodes );
+    }
+
+    bool IsRatsnestFilterActive() const { return m_ratsnestFilterActive; }
+    const std::set<int>& GetRatsnestFilterNets() const { return m_ratsnestFilterNets; }
+
     // Net chain highlight support (grouped nets).  Empty when no chain highlight active.
     const wxString& GetHighlightedNetChain() const { return m_highlightedNetChain; }
     void SetHighlightedNetChain( const wxString& aNetChain ) { m_highlightedNetChain = aNetChain; }
@@ -188,6 +197,10 @@ protected:
 
     ///< Set of net codes that should not have their ratsnest displayed
     std::set<int> m_hiddenNets;
+
+    ///< Optional allow-list supplied by the net inspector selection
+    bool          m_ratsnestFilterActive = false;
+    std::set<int> m_ratsnestFilterNets;
 
     // These opacity overrides multiply with any opacity in the base layer color
     double m_trackOpacity;     ///< Opacity override for all tracks

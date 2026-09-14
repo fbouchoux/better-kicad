@@ -318,6 +318,7 @@ struct KICOMMON_API PANEL_NET_INSPECTOR_SETTINGS
     bool                  show_zero_pad_nets;
     bool                  show_unconnected_nets;
     bool                  show_time_domain_details;
+    bool                  filter_ratsnest_by_selection;
     int                   sorting_column;
     bool                  sort_order_asc;
     std::vector<int>      col_order;
@@ -337,6 +338,7 @@ struct KICOMMON_API PANEL_NET_INSPECTOR_SETTINGS
         show_zero_pad_nets = false;
         show_unconnected_nets = false;
         show_time_domain_details = false;
+        filter_ratsnest_by_selection = false;
         sorting_column = -1;
         sort_order_asc = true;
     }

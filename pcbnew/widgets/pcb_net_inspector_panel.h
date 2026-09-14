@@ -34,6 +34,7 @@ class BOARD_ITEM;
 class CN_ITEM;
 class PCB_TRACK;
 class EDA_COMBINED_MATCHER;
+class BITMAP_BUTTON;
 
 /**
  * PCB net inspection panel
@@ -91,7 +92,9 @@ protected:
     void OnHeaderContextMenu( wxDataViewEvent& event );
     void OnNetsListContextMenu( wxDataViewEvent& event );
     void OnNetsListItemActivated( wxDataViewEvent& event );
+    void OnNetsListSelectionChanged( wxDataViewEvent& event );
     void OnColumnSorted( wxDataViewEvent& event );
+    void OnRatsnestFilterButton( wxCommandEvent& event );
 
 private:
     /// Updates displayed statistics for the given nets
@@ -168,6 +171,9 @@ private:
 
     /// Highlight the currently selected net
     void highlightSelectedNets();
+
+    /// Update the ratsnest allow-list from the currently selected rows
+    void updateRatsnestFilter();
 
     /// Handle an application-level change of units
     void onUnitsChanged( wxCommandEvent& event );
@@ -267,6 +273,9 @@ private:
     bool m_groupByNetChain = false;
     bool m_groupByConstraint = false;
     bool m_showTimeDomainDetails = false;
+    bool m_filterRatsnestBySelection = false;
+
+    BITMAP_BUTTON* m_ratsnestFilterBtn = nullptr;
 
     /// Custom net grouping rules
     std::vector<std::unique_ptr<EDA_COMBINED_MATCHER>> m_custom_group_rules;
