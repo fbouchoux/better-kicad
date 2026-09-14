@@ -2540,16 +2540,25 @@ int ROUTER_TOOL::ChangeRouterMode( const TOOL_EVENT& aEvent )
 int ROUTER_TOOL::CycleRouterMode( const TOOL_EVENT& aEvent )
 {
     PNS::ROUTING_SETTINGS& settings = m_router->Settings();
-    PNS::PNS_MODE mode = settings.Mode();
 
-    switch( mode )
+    if( settings.Mode() == PNS::RM_MarkObstacles )
     {
-    case PNS::RM_MarkObstacles: mode = PNS::RM_Shove;         break;
-    case PNS::RM_Shove:         mode = PNS::RM_Walkaround;    break;
-    case PNS::RM_Walkaround:    mode = PNS::RM_MarkObstacles; break;
+        settings.SetMode( PNS::RM_Walkaround );
+    }
+    else if( settings.Mode() == PNS::RM_Walkaround )
+    {
+        settings.SetMode( PNS::RM_Shove );
+        settings.SetShoveVias( true );
+    }
+    else if( settings.ShoveVias() )
+    {
+        settings.SetShoveVias( false );
+    }
+    else
+    {
+        settings.SetMode( PNS::RM_Walkaround );
     }
 
-    settings.SetMode( mode );
     UpdateMessagePanel();
 
     return 0;
@@ -3919,7 +3928,10 @@ void ROUTER_TOOL::UpdateMessagePanel()
         {
         case PNS::PNS_MODE::RM_MarkObstacles: mode = _( "Highlight collisions" ); break;
         case PNS::PNS_MODE::RM_Walkaround:    mode = _( "Walk around" );          break;
-        case PNS::PNS_MODE::RM_Shove:         mode = _( "Shove" );                break;
+        case PNS::PNS_MODE::RM_Shove:
+            mode = m_router->Settings().ShoveVias() ? _( "Shove, including vias" )
+                                                    : _( "Shove, excluding vias" );
+            break;
         default: break;
         }
 

@@ -193,6 +193,7 @@ BEGIN_EVENT_TABLE( PCB_EDIT_FRAME, PCB_BASE_FRAME )
     EVT_CHOICE( ID_AUX_TOOLBAR_PCB_TRACK_WIDTH, PCB_EDIT_FRAME::Tracks_and_Vias_Size_Event )
     EVT_CHOICE( ID_AUX_TOOLBAR_PCB_VIA_SIZE, PCB_EDIT_FRAME::Tracks_and_Vias_Size_Event )
     EVT_CHOICE( ID_AUX_TOOLBAR_PCB_VIA_STACK, PCB_EDIT_FRAME::SelectViaStack_Event )
+    EVT_CHOICE( ID_AUX_TOOLBAR_PCB_ROUTER_MODE, PCB_EDIT_FRAME::OnSelectRouterMode )
     EVT_CHOICE( ID_AUX_TOOLBAR_PCB_VARIANT_SELECT, PCB_EDIT_FRAME::onVariantSelected )
 
     // Tracks and vias sizes general options
@@ -202,6 +203,7 @@ BEGIN_EVENT_TABLE( PCB_EDIT_FRAME, PCB_BASE_FRAME )
     // User interface update event handlers.
     EVT_UPDATE_UI( ID_AUX_TOOLBAR_PCB_TRACK_WIDTH, PCB_EDIT_FRAME::OnUpdateSelectTrackWidth )
     EVT_UPDATE_UI( ID_AUX_TOOLBAR_PCB_VIA_SIZE, PCB_EDIT_FRAME::OnUpdateSelectViaSize )
+    EVT_UPDATE_UI( ID_AUX_TOOLBAR_PCB_ROUTER_MODE, PCB_EDIT_FRAME::OnUpdateSelectRouterMode )
     EVT_UPDATE_UI_RANGE( ID_POPUP_PCB_SELECT_WIDTH1, ID_POPUP_PCB_SELECT_WIDTH8,
                          PCB_EDIT_FRAME::OnUpdateSelectTrackWidth )
     EVT_UPDATE_UI_RANGE( ID_POPUP_PCB_SELECT_VIASIZE1, ID_POPUP_PCB_SELECT_VIASIZE8,
@@ -232,6 +234,7 @@ PCB_EDIT_FRAME::PCB_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
     m_SelTrackWidthBox = nullptr;
     m_SelViaSizeBox = nullptr;
     m_SelViaStackBox = nullptr;
+    m_SelRouterModeBox = nullptr;
     m_CurrentVariantCtrl = nullptr;
     m_ShowLayerManagerTools = true;
     m_supportsAutoSave = true;

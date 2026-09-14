@@ -75,6 +75,14 @@
 static wxBitmapBundle LayerPairBitmap;
 
 
+enum ROUTER_MODE_SELECTION
+{
+    ROUTER_MODE_WALKAROUND,
+    ROUTER_MODE_SHOVE_VIAS,
+    ROUTER_MODE_SHOVE_TRACKS
+};
+
+
 void PCB_EDIT_FRAME::PrepareLayerIndicator( bool aForceRebuild )
 {
     COLOR4D    top_color, bottom_color, background_color;
@@ -128,6 +136,10 @@ ACTION_TOOLBAR_CONTROL PCB_ACTION_TOOLBAR_CONTROLS::viaDiameter( "control.PCBVia
 ACTION_TOOLBAR_CONTROL PCB_ACTION_TOOLBAR_CONTROLS::viaStack( "control.PCBViaStack", _( "Microvia stack selector" ),
                                                               _( "Control to select the microvia stack preset" ),
                                                               { FRAME_PCB_EDITOR } );
+ACTION_TOOLBAR_CONTROL PCB_ACTION_TOOLBAR_CONTROLS::routerMode( "control.PCBRouterMode",
+                                                                _( "Router mode selector" ),
+                                                                _( "Control to select how the router handles obstacles" ),
+                                                                { FRAME_PCB_EDITOR } );
 ACTION_TOOLBAR_CONTROL PCB_ACTION_TOOLBAR_CONTROLS::currentVariant( "control.PCBCurrentVariant",
                                                                     _( "Current variant" ),
                                                                     _( "Control to select the current variant" ),
@@ -400,6 +412,9 @@ std::optional<TOOLBAR_CONFIGURATION> PCB_EDIT_TOOLBAR_SETTINGS::DefaultToolbarCo
               .AppendControl( PCB_ACTION_TOOLBAR_CONTROLS::viaStack );
 
         config.AppendSeparator()
+              .AppendControl( PCB_ACTION_TOOLBAR_CONTROLS::routerMode );
+
+        config.AppendSeparator()
               .AppendControl( ACTION_TOOLBAR_CONTROLS::layerSelector )
               .AppendAction( PCB_ACTIONS::selectLayerPair );
 
@@ -481,6 +496,25 @@ void PCB_EDIT_FRAME::configureToolbars()
 
     RegisterCustomToolbarControlFactory( PCB_ACTION_TOOLBAR_CONTROLS::viaStack, viaStackSelectorFactory );
 
+    // Router obstacle handling mode
+    auto routerModeSelectorFactory =
+            [this]( ACTION_TOOLBAR* aToolbar )
+            {
+                if( !m_SelRouterModeBox )
+                {
+                    m_SelRouterModeBox = new wxChoice( aToolbar, ID_AUX_TOOLBAR_PCB_ROUTER_MODE );
+                    m_SelRouterModeBox->Append( _( "Walk around" ) );
+                    m_SelRouterModeBox->Append( _( "Push & shove (including vias)" ) );
+                    m_SelRouterModeBox->Append( _( "Push & shove (excluding vias)" ) );
+                }
+
+                m_SelRouterModeBox->SetToolTip( _( "Select how the interactive router handles obstacles" ) );
+                aToolbar->Add( m_SelRouterModeBox );
+            };
+
+    RegisterCustomToolbarControlFactory( PCB_ACTION_TOOLBAR_CONTROLS::routerMode,
+                                         routerModeSelectorFactory );
+
     // Variant selection drop down control on main tool bar
     auto variantSelectionCtrlFactory =
             [this]( ACTION_TOOLBAR* aToolbar )
@@ -528,7 +562,8 @@ void PCB_EDIT_FRAME::ClearToolbarControl( int aId )
     {
     case ID_AUX_TOOLBAR_PCB_TRACK_WIDTH:    m_SelTrackWidthBox = nullptr;   break;
     case ID_AUX_TOOLBAR_PCB_VIA_SIZE:       m_SelViaSizeBox = nullptr;      break;
-    case ID_AUX_TOOLBAR_PCB_VIA_STACK: m_SelViaStackBox = nullptr; break;
+    case ID_AUX_TOOLBAR_PCB_VIA_STACK:   m_SelViaStackBox = nullptr;   break;
+    case ID_AUX_TOOLBAR_PCB_ROUTER_MODE: m_SelRouterModeBox = nullptr; break;
     case ID_AUX_TOOLBAR_PCB_VARIANT_SELECT: m_CurrentVariantCtrl = nullptr; break;
     }
 }
@@ -948,6 +983,60 @@ void PCB_EDIT_FRAME::OnUpdateSelectViaSize( wxUpdateUIEvent& aEvent )
         if( m_SelViaSizeBox->GetSelection() != sel )
             m_SelViaSizeBox->SetSelection( sel );
     }
+}
+
+
+void PCB_EDIT_FRAME::OnSelectRouterMode( wxCommandEvent& aEvent )
+{
+    ROUTER_TOOL* routerTool = m_toolManager->GetTool<ROUTER_TOOL>();
+
+    if( !routerTool || !routerTool->Router() )
+        return;
+
+    PNS::ROUTING_SETTINGS& settings = routerTool->Router()->Settings();
+
+    switch( aEvent.GetSelection() )
+    {
+    case ROUTER_MODE_WALKAROUND:
+        settings.SetMode( PNS::RM_Walkaround );
+        break;
+
+    case ROUTER_MODE_SHOVE_VIAS:
+        settings.SetMode( PNS::RM_Shove );
+        settings.SetShoveVias( true );
+        break;
+
+    case ROUTER_MODE_SHOVE_TRACKS:
+        settings.SetMode( PNS::RM_Shove );
+        settings.SetShoveVias( false );
+        break;
+    }
+
+    routerTool->UpdateMessagePanel();
+    GetCanvas()->SetFocus();
+}
+
+
+void PCB_EDIT_FRAME::OnUpdateSelectRouterMode( wxUpdateUIEvent& )
+{
+    if( !m_SelRouterModeBox )
+        return;
+
+    ROUTER_TOOL* routerTool = m_toolManager->GetTool<ROUTER_TOOL>();
+
+    if( !routerTool || !routerTool->Router() )
+        return;
+
+    const PNS::ROUTING_SETTINGS& settings = routerTool->Router()->Settings();
+    int selection = wxNOT_FOUND;
+
+    if( settings.Mode() == PNS::RM_Walkaround )
+        selection = ROUTER_MODE_WALKAROUND;
+    else if( settings.Mode() == PNS::RM_Shove )
+        selection = settings.ShoveVias() ? ROUTER_MODE_SHOVE_VIAS : ROUTER_MODE_SHOVE_TRACKS;
+
+    if( m_SelRouterModeBox->GetSelection() != selection )
+        m_SelRouterModeBox->SetSelection( selection );
 }
 
 

@@ -3022,7 +3022,7 @@ TOOL_ACTION PCB_ACTIONS::cycleRouterMode( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveRouter.CycleRouterMode" )
         .Scope( AS_GLOBAL )
         .FriendlyName( _( "Cycle Router Mode" ) )
-        .Tooltip( _( "Cycle router to the next mode" ) ) );
+        .Tooltip( _( "Cycle between walkaround and push-and-shove modes with or without vias" ) ) );
 
 TOOL_ACTION PCB_ACTIONS::selectLayerPair( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveRouter.SelectLayerPair" )

@@ -29,6 +29,7 @@ public:
     static ACTION_TOOLBAR_CONTROL trackWidth;
     static ACTION_TOOLBAR_CONTROL viaDiameter;
     static ACTION_TOOLBAR_CONTROL viaStack;
+    static ACTION_TOOLBAR_CONTROL routerMode;
     static ACTION_TOOLBAR_CONTROL currentVariant;
 };
 

@@ -157,6 +157,10 @@ public:
 
     void OnUpdateSelectViaSize( wxUpdateUIEvent& aEvent );
     void OnUpdateSelectTrackWidth( wxUpdateUIEvent& aEvent );
+    void OnUpdateSelectRouterMode( wxUpdateUIEvent& aEvent );
+
+    /** Handle a routing obstacle mode selection from the auxiliary toolbar. */
+    void OnSelectRouterMode( wxCommandEvent& aEvent );
 
     void UpdateTrackWidthSelectBox( wxChoice* aTrackWidthSelectBox, bool aShowNetclass,
                                     bool aShowEdit );
@@ -825,6 +829,7 @@ public:
     wxChoice* m_SelTrackWidthBox;        // a choice box to display and select current track width
     wxChoice* m_SelViaSizeBox;           // a choice box to display and select current via diameter
     wxChoice* m_SelViaStackBox;          // a choice box to display and select current via stack preset
+    wxChoice* m_SelRouterModeBox;        // a choice box to select the router obstacle mode
     wxChoice* m_CurrentVariantCtrl;      // a choice box to display and select current variant
 
     bool      m_ShowLayerManagerTools;
