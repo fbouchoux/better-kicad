@@ -2524,6 +2524,9 @@ int PCB_POINT_EDITOR::OnSelectionChange( const TOOL_EVENT& aEvent )
     if( !item || ( item->IsLocked() && !overrideLocks ) )
         return 0;
 
+    // Activate before creating any tool state because activation synchronously resets it.
+    Activate();
+
     m_constraintDragSession.reset();
 
     // Use the original object as a construction item
@@ -2575,14 +2578,7 @@ int PCB_POINT_EDITOR::OnSelectionChange( const TOOL_EVENT& aEvent )
     if( !m_editPoints )
         return 0;
 
-    // Only activate the tool and its graphical cursor after confirming that the selection can
-    // actually be point-edited
-    Activate();
-
-    // Activating a tool may synchronously reset it through a context change.
-    if( !m_editPoints )
-        return 0;
-
+    // Only show the graphical cursor after confirming that the selection can be point-edited.
     getViewControls()->ShowCursor( true );
 
     PCB_GRID_HELPER grid( m_toolMgr, editFrame->GetMagneticItemsSettings() );
