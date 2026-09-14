@@ -1489,6 +1489,41 @@ void ROUTER_TOOL::clearPendingSmartVia( bool aRemoveExpansion )
 }
 
 
+void ROUTER_TOOL::updateEndItem( const TOOL_EVENT& aEvent )
+{
+    TOOL_BASE::updateEndItem( aEvent );
+
+    if( !m_pendingSmartVia || !m_router->IsPlacingVia()
+        || m_pendingSmartViaTarget == UNDEFINED_LAYER || !m_gridHelper->GetSnap() )
+    {
+        return;
+    }
+
+    VECTOR2I mousePos = GetClampedCoords( controls()->GetMousePosition(), COORDS_PADDING );
+
+    if( m_router->GetState() == PNS::ROUTER::ROUTE_TRACK && aEvent.IsDrag() )
+        mousePos = aEvent.DragOrigin();
+
+    int targetLayer = m_iface->GetPNSLayerFromBoardLayer( m_pendingSmartViaTarget );
+
+    for( PNS::NET_HANDLE net : m_router->GetCurrentNets() )
+    {
+        PNS::ITEM* item = pickSingleItem( mousePos, net, targetLayer );
+
+        if( !item || !item->OfKind( PNS::ITEM::SOLID_T ) || !item->Parent()
+            || item->Parent()->Type() != PCB_PAD_T || !checkSnap( item ) )
+        {
+            continue;
+        }
+
+        m_endItem = item;
+        m_endSnapPoint = static_cast<PAD*>( item->Parent() )->GetPosition();
+        controls()->ForceCursorPosition( true, m_endSnapPoint );
+        break;
+    }
+}
+
+
 void ROUTER_TOOL::configureViaPlacement( const TOOL_EVENT& aEvent, PCB_LAYER_ID aStart,
                                          PCB_LAYER_ID aTarget, VIATYPE aType, int aDiameter,
                                          int aDrill )

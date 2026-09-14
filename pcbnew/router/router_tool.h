@@ -127,6 +127,11 @@ private:
     int onSmartViaCommand( const TOOL_EVENT& aEvent );
 
     /**
+     * Apply destination-layer pad magnetism while placing a Smart Via.
+     */
+    void updateEndItem( const TOOL_EVENT& aEvent ) override;
+
+    /**
      * Configure the existing PNS via preview for an explicit layer transition.
      */
     void configureViaPlacement( const TOOL_EVENT& aEvent, PCB_LAYER_ID aStart,

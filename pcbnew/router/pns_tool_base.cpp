@@ -113,7 +113,7 @@ void TOOL_BASE::Reset( RESET_REASON aReason )
 ITEM* TOOL_BASE::pickSingleItem( const VECTOR2I& aWhere, NET_HANDLE aNet, int aLayer,
                                  bool aIgnorePads, const std::vector<ITEM*> aAvoidItems )
 {
-    int tl = aLayer > 0 ? aLayer
+    int tl = aLayer >= 0 ? aLayer
                         : m_router->GetInterface()->GetPNSLayerFromBoardLayer(
                                   static_cast<PCB_LAYER_ID>( getView()->GetTopLayer() ) );
     // A grid-sized search radius keeps off-grid targets reachable while grid snapping is active.
@@ -155,6 +155,9 @@ ITEM* TOOL_BASE::pickSingleItem( const VECTOR2I& aWhere, NET_HANDLE aNet, int aL
                 continue;
 
             if( !m_iface->IsPNSCopperLayer( item->Layers().Start() ) )
+                continue;
+
+            if( aLayer >= 0 && !item->Layers().Overlaps( aLayer ) )
                 continue;
 
             if( !m_iface->IsAnyLayerVisible( item->Layers() ) )
