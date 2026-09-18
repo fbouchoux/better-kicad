@@ -739,9 +739,8 @@ protected:
     /**
      * Handle PCB editor Ctrl+mouse-wheel actions.
      *
-     * During interactive routing the wheel steps Smart Vias through the copper stack. Otherwise,
-     * it changes the active copper layer without wrapping. Ctrl+Shift retains the selected-track
-     * width adjustment with a 0.01 mm step.
+     * During interactive routing the wheel steps Smart Vias through the copper stack.
+     * Otherwise, Ctrl+wheel adjusts selected-track width with a 0.01 mm step.
      */
     void onCtrlMouseWheel( wxMouseEvent& aEvent );
 

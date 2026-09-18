@@ -2587,7 +2587,7 @@ bool ROUTER_TOOL::HandleSmartViaWheel( int aRotation )
         return false;
     }
 
-    const TOOL_ACTION& action = aRotation > 0 ? ACT_SmartViaPrevious : ACT_SmartViaNext;
+    const TOOL_ACTION& action = aRotation > 0 ? ACT_SmartViaNext : ACT_SmartViaPrevious;
     TOOL_EVENT         event = action.MakeEvent();
     event.SetMousePosition( controls()->GetMousePosition() );
     onSmartViaCommand( event );
