@@ -47,6 +47,7 @@ private:
 
 private:
     bool        m_isFootprintEditor;
+    wxCheckBox* m_routeOnPadClick;
 
     UNIT_BINDER m_rotationAngle;
 };

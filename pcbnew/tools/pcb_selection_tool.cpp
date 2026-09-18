@@ -481,7 +481,19 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
                     // Mirrors eeschema's SCH_TABLE shift+click range select.
                     if( !extendTableCellSelectionTo( evt->Position() ) )
                     {
-                        selectPoint( evt->Position() );
+                        bool selected = selectPoint( evt->Position() );
+
+                        if( selected && brd_editor && m_frame->ToolStackIsEmpty()
+                            && evt->Modifier() == 0
+                            && m_frame->GetPcbNewSettings()->m_RouteOnPadClick
+                            && m_selection.GetSize() == 1
+                            && m_selection[0]->Type() == PCB_PAD_T
+                            && ( static_cast<PAD*>( m_selection[0] )->GetLayerSet()
+                                 & LSET::AllCuMask() ).any() )
+                        {
+                            m_toolMgr->RunAction( PCB_ACTIONS::routeSingleTrack );
+                            m_toolMgr->PrimeTool( evt->Position() );
+                        }
 
                         // Anchor for a subsequent shift+click or shift+drag whose IsClick
                         // jitter could otherwise promote into IsDrag, collapsing the range

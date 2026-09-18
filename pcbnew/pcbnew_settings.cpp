@@ -58,6 +58,7 @@ PCBNEW_SETTINGS::PCBNEW_SETTINGS() :
         m_Display(),
         m_FieldEditorPanel(),
         m_TrackDragAction( TRACK_DRAG_ACTION::DRAG ),
+        m_RouteOnPadClick( false ),
         m_ArcEditMode( ARC_EDIT_MODE::KEEP_CENTER_ADJUST_ANGLE_RADIUS ),
         m_CtrlClickHighlight( false ),
         m_AngleSnapMode( LEADER_MODE::DIRECT ),
@@ -188,6 +189,9 @@ PCBNEW_SETTINGS::PCBNEW_SETTINGS() :
     m_params.emplace_back( new PARAM<int>( "editing.track_drag_action",
             reinterpret_cast<int*>( &m_TrackDragAction ),
             static_cast<int>( TRACK_DRAG_ACTION::DRAG ) ) );
+
+    m_params.emplace_back( new PARAM<bool>( "editing.route_on_pad_click",
+            &m_RouteOnPadClick, false ) );
 
     m_params.emplace_back( new PARAM<int>( "editing.arc_edit_mode",
             reinterpret_cast<int*>( &m_ArcEditMode ),

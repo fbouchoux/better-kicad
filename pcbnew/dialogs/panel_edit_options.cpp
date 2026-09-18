@@ -34,6 +34,9 @@ PANEL_EDIT_OPTIONS::PANEL_EDIT_OPTIONS( wxWindow* aParent, UNITS_PROVIDER* aUnit
         m_rotationAngle( aUnitsProvider, aEventSource, m_rotationAngleLabel, m_rotationAngleCtrl,
                          m_rotationAngleUnits )
 {
+    m_routeOnPadClick = new wxCheckBox( this, wxID_ANY, _( "Start routing on pad click" ) );
+    m_routeOnPadClick->SetToolTip( _( "Start a track by clicking and releasing on a copper pad." ) );
+    m_sizerBoardEdit->Insert( 4, m_routeOnPadClick, 0, wxTOP | wxBOTTOM | wxLEFT, 5 );
     m_sizerBoardEdit->Show( !m_isFootprintEditor );
 
     m_rotationAngle.SetUnits( EDA_UNITS::DEGREES );
@@ -101,6 +104,7 @@ void PANEL_EDIT_OPTIONS::loadPCBSettings( PCBNEW_SETTINGS* aCfg )
     m_rotationAngle.SetAngleValue( aCfg->m_RotationAngle );
     m_arcEditMode->SetSelection( arcEditModeToComboIndex( aCfg->m_ArcEditMode ) );
     m_trackMouseDragCtrl->SetSelection( (int) aCfg->m_TrackDragAction );
+    m_routeOnPadClick->SetValue( aCfg->m_RouteOnPadClick );
 
     if( aCfg->m_FlipDirection == FLIP_DIRECTION::LEFT_RIGHT )
         m_rbFlipLeftRight->SetValue( true );
@@ -179,6 +183,7 @@ bool PANEL_EDIT_OPTIONS::TransferDataFromWindow()
             cfg->m_RotationAngle = m_rotationAngle.GetAngleValue();
             cfg->m_ArcEditMode = arcEditModeToEnum( m_arcEditMode->GetSelection() );
             cfg->m_TrackDragAction = (TRACK_DRAG_ACTION) m_trackMouseDragCtrl->GetSelection();
+            cfg->m_RouteOnPadClick = m_routeOnPadClick->GetValue();
 
             cfg->m_FlipDirection = m_rbFlipLeftRight->GetValue() ? FLIP_DIRECTION::LEFT_RIGHT
                                                                  : FLIP_DIRECTION::TOP_BOTTOM;

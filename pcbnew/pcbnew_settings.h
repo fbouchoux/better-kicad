@@ -240,6 +240,7 @@ public:
     MAGNETIC_SETTINGS  m_MagneticItems;
     SNAP_INFERENCE_SETTINGS m_SnapInference;
     TRACK_DRAG_ACTION  m_TrackDragAction;
+    bool               m_RouteOnPadClick;
     ARC_EDIT_MODE      m_ArcEditMode;
 
     bool               m_CtrlClickHighlight;
