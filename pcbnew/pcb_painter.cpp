@@ -377,8 +377,16 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
     if( conItem )
         netCode = conItem->GetNetCode();
 
-    bool highlighted = m_highlightEnabled && m_highlightNetcodes.count( netCode );
-    bool selected    = aItem->IsSelected();
+    // The net inspector's ratsnest filter also emphasizes its selected copper items.
+    // Keep it separate from the regular net highlight so disabling the filter restores
+    // any highlight that was already active.
+    const bool inspectorFilterApplies = m_ratsnestFilterActive && conItem
+                                        && ( aItem->Type() == PCB_TRACE_T || aItem->Type() == PCB_ARC_T
+                                             || aItem->Type() == PCB_VIA_T || aItem->Type() == PCB_PAD_T );
+    const bool highlightEnabled = inspectorFilterApplies || m_highlightEnabled;
+    const bool highlighted = inspectorFilterApplies ? m_ratsnestFilterNets.contains( netCode )
+                                                    : m_highlightEnabled && m_highlightNetcodes.contains( netCode );
+    const bool selected = aItem->IsSelected();
 
     // Apply net color overrides
     if( conItem && m_netColorMode == NET_COLOR_MODE::ALL && IsCopperLayer( aLayer ) )
@@ -406,7 +414,7 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
             // Selection brightening overrides highlighting
             netColor.Brighten( m_selectFactor );
         }
-        else if( m_highlightEnabled )
+        else if( highlightEnabled )
         {
             // Highlight brightens objects on all layers and darkens everything else for contrast
             if( highlighted )
@@ -417,10 +425,10 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
 
         color = netColor;
     }
-    else if( !selected && m_highlightEnabled )
+    else if( !selected && highlightEnabled )
     {
         // Single net highlight mode
-        if( m_highlightNetcodes.contains( netCode ) )
+        if( highlighted )
         {
             auto it_hi = m_layerColorsHi.find( aLayer );
             color = it_hi == m_layerColorsHi.end() ? color.Brightened( m_highlightFactor ) : it_hi->second;

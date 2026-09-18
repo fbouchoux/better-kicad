@@ -69,7 +69,7 @@ PCB_NET_INSPECTOR_PANEL::PCB_NET_INSPECTOR_PANEL( wxWindow* parent, PCB_EDIT_FRA
     m_ratsnestFilterBtn->SetBitmap( KiBitmapBundle( BITMAPS::general_ratsnest ) );
     m_ratsnestFilterBtn->SetPadding( 2 );
     m_ratsnestFilterBtn->SetToolTip(
-            _( "Show ratsnest for selected nets only; show all when none are selected" ) );
+            _( "Show ratsnest and emphasize copper for selected nets; show all when none are selected" ) );
     m_sizerOuter->Add( m_ratsnestFilterBtn, wxGBPosition( 0, 2 ), wxGBSpan( 1, 1 ),
                        wxALIGN_CENTER_VERTICAL | wxLEFT, 3 );
     Layout();
@@ -1779,8 +1779,10 @@ void PCB_NET_INSPECTOR_PANEL::updateRatsnestFilter()
     auto* renderSettings = static_cast<KIGFX::PCB_RENDER_SETTINGS*>(
             m_frame->GetCanvas()->GetView()->GetPainter()->GetSettings() );
 
+    filterActive = m_filterRatsnestBySelection && !netCodes.empty();
     renderSettings->SetRatsnestFilter( filterActive, std::move( netCodes ) );
     m_frame->GetCanvas()->RedrawRatsnest();
+    m_frame->GetCanvas()->GetView()->UpdateAllLayersColor();
     m_frame->GetCanvas()->Refresh();
 }
 
@@ -2052,7 +2054,7 @@ void PCB_NET_INSPECTOR_PANEL::onDeleteSelectedNet()
 void PCB_NET_INSPECTOR_PANEL::OnLanguageChangedImpl()
 {
     m_ratsnestFilterBtn->SetToolTip(
-            _( "Show ratsnest for selected nets only; show all when none are selected" ) );
+            _( "Show ratsnest and emphasize copper for selected nets; show all when none are selected" ) );
     SaveSettings();
     buildNetsList( true );
     m_dataModel->updateAllItems();
