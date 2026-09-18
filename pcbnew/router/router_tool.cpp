@@ -26,6 +26,7 @@
 #include <advanced_config.h>
 #include <kiplatform/ui.h>
 
+#include <algorithm>
 #include <functional>
 #include <iomanip>
 #include <iterator>
@@ -71,6 +72,7 @@ using namespace std::placeholders;
 #include <tool/tool_manager.h>
 #include <tool/tool_menu.h>
 #include <tools/pcb_actions.h>
+#include <tools/pcb_control.h>
 #include <tools/pcb_selection_tool.h>
 #include <board_commit.h>
 #include <board_stackup_manager/board_stackup.h>
@@ -1220,8 +1222,63 @@ static VIATYPE getViaTypeFromFlags( int aFlags )
 }
 
 
+static PCB_LAYER_ID adjacentVisibleCopperLayer( BOARD* aBoard, PCB_LAYER_ID aCurrentLayer,
+                                                bool aNext )
+{
+    // Search in board layer UI order and stop at either end of the stack.
+    LSEQ layers = LSET::AllCuMask( aBoard->GetCopperLayerCount() ).UIOrder();
+    auto current = std::find( layers.begin(), layers.end(), aCurrentLayer );
+
+    if( current == layers.end() )
+        return UNDEFINED_LAYER;
+
+    int step = aNext ? 1 : -1;
+
+    for( int i = static_cast<int>( std::distance( layers.begin(), current ) ) + step;
+         i >= 0 && i < static_cast<int>( layers.size() ); i += step )
+    {
+        if( aBoard->IsLayerVisible( layers[i] ) )
+            return layers[i];
+    }
+
+    return UNDEFINED_LAYER;
+}
+
+
 int ROUTER_TOOL::onLayerCommand( const TOOL_EVENT& aEvent )
 {
+    if( IsToolActive() && !m_router->RoutingInProgress() )
+    {
+        PCB_CONTROL* control = m_toolMgr->GetTool<PCB_CONTROL>();
+
+        wxCHECK( control, 0 );
+
+        if( aEvent.IsAction( &PCB_ACTIONS::layerNext )
+            || aEvent.IsAction( &PCB_ACTIONS::layerPrev ) )
+        {
+            PCB_LAYER_ID currentLayer = frame()->GetActiveLayer();
+
+            if( IsCopperLayer( currentLayer ) )
+            {
+                PCB_LAYER_ID targetLayer = adjacentVisibleCopperLayer(
+                        board(), currentLayer, aEvent.IsAction( &PCB_ACTIONS::layerNext ) );
+
+                if( targetLayer != UNDEFINED_LAYER )
+                    frame()->SwitchLayer( targetLayer );
+            }
+            else if( aEvent.IsAction( &PCB_ACTIONS::layerNext ) )
+                control->LayerNext( aEvent );
+            else
+                control->LayerPrev( aEvent );
+        }
+        else if( aEvent.IsAction( &PCB_ACTIONS::layerToggle ) )
+            control->LayerToggle( aEvent );
+        else
+            control->LayerSwitch( aEvent );
+
+        return 0;
+    }
+
     handleLayerSwitch( aEvent, false );
     UpdateMessagePanel();
 
@@ -1848,85 +1905,23 @@ int ROUTER_TOOL::handleLayerSwitch( const TOOL_EVENT& aEvent, bool aForceVia )
     // First see if this is one of the switch layer commands
     BOARD*       brd           = board();
     LSET         enabledLayers = LSET::AllCuMask( brd->GetDesignSettings().GetCopperLayerCount() );
-    LSEQ         layers        = enabledLayers.UIOrder();
 
-    // These layers are in Board Layer UI order not PNS layer order
     PCB_LAYER_ID currentLayer = m_iface->GetBoardLayerFromPNSLayer( m_router->GetCurrentLayer() );
     PCB_LAYER_ID targetLayer  = UNDEFINED_LAYER;
 
     if( aEvent.IsAction( &PCB_ACTIONS::layerNext ) )
     {
-        size_t idx = 0;
-        size_t target_idx = 0;
-
-        for( size_t i = 0; i < layers.size(); i++ )
-        {
-            if( layers[i] == currentLayer )
-            {
-                idx = i;
-                break;
-            }
-        }
-
-        target_idx = ( idx + 1 ) % layers.size();
-        // issue: #14480
-        // idx + 1 layer may be invisible, switches to next visible layer
-        for( size_t i = 0; i < layers.size() - 1; i++ )
-        {
-            if( brd->IsLayerVisible( layers[target_idx] ) )
-            {
-                targetLayer = layers[target_idx];
-                break;
-            }
-            target_idx += 1;
-
-            if( target_idx >= layers.size() )
-            {
-                target_idx = 0;
-            }
-        }
+        targetLayer = adjacentVisibleCopperLayer( brd, currentLayer, true );
 
         if( targetLayer == UNDEFINED_LAYER )
-        {
-            // if there is no visible layers
             return 0;
-        }
     }
     else if( aEvent.IsAction( &PCB_ACTIONS::layerPrev ) )
     {
-        size_t idx = 0;
-        size_t target_idx = 0;
-
-        for( size_t i = 0; i < layers.size(); i++ )
-        {
-            if( layers[i] == currentLayer )
-            {
-                idx = i;
-                break;
-            }
-        }
-
-        target_idx = ( idx > 0 ) ? ( idx - 1 ) : ( layers.size() - 1 );
-
-        for( size_t i = 0; i < layers.size() - 1; i++ )
-        {
-            if( brd->IsLayerVisible( layers[target_idx] ) )
-            {
-                targetLayer = layers[target_idx];
-                break;
-            }
-
-            if( target_idx > 0 )
-                target_idx -= 1;
-            else
-                target_idx = layers.size() - 1;
-        }
+        targetLayer = adjacentVisibleCopperLayer( brd, currentLayer, false );
 
         if( targetLayer == UNDEFINED_LAYER )
-        {
-            // if there is no visible layers
             return 0;
-        }
     }
     else if( aEvent.IsAction( &PCB_ACTIONS::layerToggle ) )
     {
