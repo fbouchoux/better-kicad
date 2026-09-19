@@ -389,13 +389,16 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
     const bool selected = aItem->IsSelected();
 
     // Apply net color overrides
-    if( conItem && m_netColorMode == NET_COLOR_MODE::ALL && IsCopperLayer( aLayer ) )
+    if( conItem && IsCopperLayer( aLayer )
+        && ( m_colorfulMode ? aItem->Type() == PCB_PAD_T
+                            : m_netColorMode == NET_COLOR_MODE::ALL ) )
     {
         COLOR4D netColor = COLOR4D::UNSPECIFIED;
 
-        auto ii = m_netColors.find( netCode );
+        const auto& netColors = GetNetColorMap();
+        auto ii = netColors.find( netCode );
 
-        if( ii != m_netColors.end() )
+        if( ii != netColors.end() )
             netColor = ii->second;
 
         if( netColor == COLOR4D::UNSPECIFIED )

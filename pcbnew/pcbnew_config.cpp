@@ -88,6 +88,7 @@ bool PCB_EDIT_FRAME::LoadProjectSettings()
             hiddenNets.insert( net->GetNetCode() );
     }
 
+    renderSettings->DisableColorfulMode();
     std::map<int, KIGFX::COLOR4D>& netColors = renderSettings->GetNetColorMap();
     netColors.clear();
 
@@ -169,7 +170,7 @@ void PCB_EDIT_FRAME::SaveProjectLocalSettings()
 
     netSettings->ClearNetColorAssignments();
 
-    for( const auto& [ netcode, color ] : renderSettings->GetNetColorMap() )
+    for( const auto& [ netcode, color ] : renderSettings->GetStoredNetColorMap() )
     {
         if( NETINFO_ITEM* net = nets.GetNetItem( netcode ) )
             netSettings->SetNetColorAssignment( net->GetNetname(), color );

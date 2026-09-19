@@ -139,7 +139,31 @@ public:
     NET_COLOR_MODE GetNetColorMode() const { return m_netColorMode; }
     void SetNetColorMode( NET_COLOR_MODE aMode ) { m_netColorMode = aMode; }
 
-    std::map<int, KIGFX::COLOR4D>& GetNetColorMap() { return m_netColors; }
+    std::map<int, KIGFX::COLOR4D>& GetNetColorMap()
+    {
+        return m_colorfulMode ? m_colorfulNetColors : m_netColors;
+    }
+
+    const std::map<int, KIGFX::COLOR4D>& GetNetColorMap() const
+    {
+        return m_colorfulMode ? m_colorfulNetColors : m_netColors;
+    }
+
+    const std::map<int, KIGFX::COLOR4D>& GetStoredNetColorMap() const { return m_netColors; }
+
+    bool IsColorfulMode() const { return m_colorfulMode; }
+
+    void SetColorfulNetColors( std::map<int, KIGFX::COLOR4D> aColors )
+    {
+        m_colorfulNetColors = std::move( aColors );
+        m_colorfulMode = true;
+    }
+
+    void DisableColorfulMode()
+    {
+        m_colorfulMode = false;
+        m_colorfulNetColors.clear();
+    }
 
     std::set<int>& GetHiddenNets() { return m_hiddenNets; }
     const std::set<int>& GetHiddenNets() const { return m_hiddenNets; }
@@ -194,6 +218,10 @@ protected:
 
     ///< Overrides for specific net colors, stored as netcodes for the ratsnest to access easily
     std::map<int, KIGFX::COLOR4D> m_netColors;
+
+    ///< Temporary net colors for placement; never written to project settings.
+    std::map<int, KIGFX::COLOR4D> m_colorfulNetColors;
+    bool m_colorfulMode = false;
 
     ///< Set of net codes that should not have their ratsnest displayed
     std::set<int> m_hiddenNets;

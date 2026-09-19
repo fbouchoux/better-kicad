@@ -83,7 +83,7 @@ void RATSNEST_VIEW_ITEM::ViewDraw( int aLayer, KIGFX::VIEW* aView ) const
 
     COLOR4D    defaultColor = rs->GetColor( nullptr, LAYER_RATSNEST );
     COLOR4D    color = defaultColor;
-    const bool colorByNet = rs->GetNetColorMode() != NET_COLOR_MODE::OFF;
+    const bool colorByNet = rs->IsColorfulMode() || rs->GetNetColorMode() != NET_COLOR_MODE::OFF;
     const bool dimStatic = m_data->GetLocalRatsnest().size() > 0 || highlightedNets.size() > 0;
 
     std::map<int, KIGFX::COLOR4D>& netColors = rs->GetNetColorMap();

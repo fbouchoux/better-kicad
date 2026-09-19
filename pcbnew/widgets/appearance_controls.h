@@ -376,6 +376,10 @@ private:
 
     void onNetColorMode( wxCommandEvent& aEvent );
 
+    void onColorfulMode( wxCommandEvent& aEvent );
+
+    void updateColorfulNetColors();
+
     void onRatsnestMode( wxCommandEvent& aEvent );
 
     void onNetclassContextMenu( wxCommandEvent& aEvent );
@@ -475,6 +479,7 @@ private:
     wxRadioButton*       m_rbNetColorAll;
     wxRadioButton*       m_rbNetColorRatsnest;
     wxRadioButton*       m_rbNetColorOff;
+    wxCheckBox*          m_cbColorfulMode;
     wxStaticText*        m_txtRatsnestVisibility;
     wxRadioButton*       m_rbRatsnestAllLayers;
     wxRadioButton*       m_rbRatsnestVisLayers;
