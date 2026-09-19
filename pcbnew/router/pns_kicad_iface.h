@@ -44,6 +44,7 @@ class EDA_TEXT;
 class LENGTH_DELAY_CALCULATION_ITEM;
 class BOARD_ITEM;
 class EDA_GROUP;
+class PCB_VIA_STACK;
 
 namespace PNS
 {
@@ -194,6 +195,7 @@ protected:
 
     std::unordered_map<BOARD_ITEM*, EDA_GROUP*>               m_itemGroups;
     std::unordered_map<BOARD_ITEM*, std::vector<BOARD_ITEM*>> m_replacementMap;
+    std::unordered_map<PCB_VIA_STACK*, VECTOR2I>               m_viaStackOffsets;
 
     PCB_TOOL_BASE*                  m_tool;
     std::unique_ptr<BOARD_COMMIT>   m_commit;

@@ -61,6 +61,7 @@ using namespace std::placeholders;
 #include <ratsnest/ratsnest_data.h>
 #include <trace_helpers.h>
 #include <geometry/geometry_utils.h>
+#include <generators/pcb_via_stack.h>
 #include <wx/event.h>
 #include <wx/timer.h>
 #include <wx/log.h>
@@ -679,11 +680,13 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
             else
             {
                 // Don't allow starting a drag from a zone filled area that isn't already selected
-                auto zoneFilledAreaFilter =
+                auto dragStartFilter =
                         []( const VECTOR2I& aWhere, GENERAL_COLLECTOR& aCollector, PCB_SELECTION_TOOL* aTool )
                         {
                             int accuracy = aCollector.GetGuide()->Accuracy();
                             std::set<EDA_ITEM*> remove;
+                            std::vector<PCB_VIA*> vias;
+                            std::vector<VECTOR2I> viaStackPositions;
 
                             for( EDA_ITEM* item : aCollector )
                             {
@@ -697,6 +700,44 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
                                         remove.insert( zone );
                                     }
                                 }
+
+                                if( item->Type() == PCB_VIA_T )
+                                    vias.push_back( static_cast<PCB_VIA*>( item ) );
+
+                                if( PCB_VIA_STACK* stack = dynamic_cast<PCB_VIA_STACK*>( item ) )
+                                {
+                                    for( BOARD_ITEM* member : stack->GetBoardItems() )
+                                    {
+                                        if( member->Type() == PCB_VIA_T
+                                            && member->HitTest( aWhere, accuracy ) )
+                                        {
+                                            viaStackPositions.push_back( member->GetPosition() );
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Prefer vias and microvia stacks over track endpoints connected to
+                            // them.  Keeping all candidate positions allows the normal layer
+                            // heuristics to pick the right hop when several vias are stacked.
+                            for( PCB_VIA* via : vias )
+                                viaStackPositions.push_back( via->GetPosition() );
+
+                            for( const VECTOR2I& viaPosition : viaStackPositions )
+                            {
+                                for( EDA_ITEM* item : aCollector )
+                                {
+                                    if( !item->IsType( { PCB_TRACE_T, PCB_ARC_T } ) )
+                                        continue;
+
+                                    PCB_TRACK* track = static_cast<PCB_TRACK*>( item );
+
+                                    if( track->GetStart() == viaPosition
+                                        || track->GetEnd() == viaPosition )
+                                    {
+                                        remove.insert( track );
+                                    }
+                                }
                             }
 
                             for( EDA_ITEM* item : remove )
@@ -708,8 +749,71 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
 
                 if( evt->HasPosition() )
                 {
+                    // A previously selected track also contains its endpoint, so the normal
+                    // selected-item path would bypass hit testing and hide a microvia under the
+                    // cursor.  Promote a connected via before deciding what to drag.
+                    if( m_selection.GetSize() == 1
+                        && m_selection[0]->IsType( { PCB_TRACE_T, PCB_ARC_T } ) )
+                    {
+                        PCB_TRACK* selectedTrack = static_cast<PCB_TRACK*>( m_selection[0] );
+                        std::vector<BOARD_ITEM*> viasAtOrigin = CollectPoint(
+                                evt->DragOrigin(),
+                                []( const VECTOR2I&, GENERAL_COLLECTOR& aCollector,
+                                    PCB_SELECTION_TOOL* )
+                                {
+                                    for( int i = aCollector.GetCount() - 1; i >= 0; --i )
+                                    {
+                                        if( aCollector[i]->Type() != PCB_VIA_T
+                                            && !dynamic_cast<PCB_VIA_STACK*>( aCollector[i] ) )
+                                        {
+                                            aCollector.Remove( i );
+                                        }
+                                    }
+                                } );
+
+                        for( BOARD_ITEM* item : viasAtOrigin )
+                        {
+                            bool connected = false;
+
+                            if( item->Type() == PCB_VIA_T )
+                            {
+                                PCB_VIA* via = static_cast<PCB_VIA*>( item );
+                                connected = selectedTrack->GetStart() == via->GetPosition()
+                                            || selectedTrack->GetEnd() == via->GetPosition();
+                            }
+                            else if( PCB_VIA_STACK* stack = dynamic_cast<PCB_VIA_STACK*>( item ) )
+                            {
+                                for( BOARD_ITEM* member : stack->GetBoardItems() )
+                                {
+                                    if( member->Type() != PCB_VIA_T )
+                                        continue;
+
+                                    PCB_VIA* via = static_cast<PCB_VIA*>( member );
+
+                                    if( via->GetNetCode() == selectedTrack->GetNetCode()
+                                        && via->IsOnLayer( selectedTrack->GetLayer() )
+                                        && ( selectedTrack->GetStart() == via->GetPosition()
+                                             || selectedTrack->GetEnd() == via->GetPosition() ) )
+                                    {
+                                        connected = true;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if( !connected )
+                                continue;
+
+                            ClearSelection( true );
+                            select( item );
+                            m_selection.SetIsHover( true );
+                            m_toolMgr->ProcessEvent( EVENTS::PointSelectedEvent );
+                            break;
+                        }
+                    }
+
                     if( m_selection.Empty()
-                        && selectPoint( evt->DragOrigin(), false, nullptr, zoneFilledAreaFilter ) )
+                        && selectPoint( evt->DragOrigin(), false, nullptr, dragStartFilter ) )
                     {
                         m_selection.SetIsHover( true );
                         doDrag = true;
@@ -726,9 +830,13 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
                     size_t segs = m_selection.CountType( PCB_TRACE_T );
                     size_t arcs = m_selection.CountType( PCB_ARC_T );
                     size_t vias = m_selection.CountType( PCB_VIA_T );
-                    // Note: multi-track dragging is currently supported, but not multi-via
-                    bool   routable = ( segs >= 1 || arcs >= 1 || vias == 1 )
-                                        && ( segs + arcs + vias == m_selection.GetSize() );
+                    bool viaStack = m_selection.GetSize() == 1
+                                    && dynamic_cast<PCB_VIA_STACK*>( m_selection[0] );
+                    // Loose multi-via selections are not supported; a microvia stack is handled
+                    // as one routed component.
+                    bool routable = viaStack
+                                    || ( ( segs >= 1 || arcs >= 1 || vias == 1 )
+                                         && ( segs + arcs + vias == m_selection.GetSize() ) );
 
                     // Vias that belong to a generator with individually-selectable children
                     // (e.g. via stitching) should use the plain move flow so the parent

@@ -143,6 +143,11 @@ public:
     // The hop polyline stores absolute positions, so it must follow every transform or a
     // later regenerate snaps the vias back to the old location.
     void Move( const VECTOR2I& aMoveVector ) override;
+
+    /**
+    * Moves the stored generator geometry without moving its generated members.
+    */
+    void MoveDefinition( const VECTOR2I& aMoveVector );
     void Rotate( const VECTOR2I& aRotCentre, const EDA_ANGLE& aAngle ) override;
     void Flip( const VECTOR2I& aCentre, FLIP_DIRECTION aFlipDirection ) override;
     void Mirror( const VECTOR2I& aCentre, FLIP_DIRECTION aFlipDirection ) override;

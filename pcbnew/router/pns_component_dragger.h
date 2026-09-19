@@ -120,14 +120,14 @@ private:
     struct DRAGGED_CONNECTION
     {
         LINE     origLine;
-        SOLID*   attachedPad;
+        ITEM*    attachedItem;
         VECTOR2I p_orig, p_next;
         VECTOR2I offset;
     };
 
-    std::set<SOLID*>                m_solids;       // Pads being dragged
-    std::set<ITEM*>                 m_fixedItems;   // Items being moved along with pads
-    std::vector<DRAGGED_CONNECTION> m_conns;        // Lines being dragged with pads
+    std::set<ITEM*>                 m_anchors;       // Pads or vias being dragged
+    std::set<ITEM*>                 m_fixedItems;    // Items joining two dragged anchors
+    std::vector<DRAGGED_CONNECTION> m_conns;         // Lines being dragged with anchors
 
     bool     m_dragStatus;
     ITEM_SET m_draggedItems;

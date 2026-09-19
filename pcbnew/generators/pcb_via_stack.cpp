@@ -161,6 +161,18 @@ void PCB_VIA_STACK::Move( const VECTOR2I& aMoveVector )
 }
 
 
+/**
+* Moves the definition after the router has already moved the generated members.
+*/
+void PCB_VIA_STACK::MoveDefinition( const VECTOR2I& aMoveVector )
+{
+    SetPosition( GetPosition() + aMoveVector );
+
+    if( m_hops )
+        m_hops->Move( aMoveVector );
+}
+
+
 void PCB_VIA_STACK::Rotate( const VECTOR2I& aRotCentre, const EDA_ANGLE& aAngle )
 {
     PCB_GENERATOR::Rotate( aRotCentre, aAngle );

@@ -24,6 +24,7 @@
 #include "pns_arc.h"
 #include "pns_line.h"
 #include "pns_solid.h"
+#include "pns_via.h"
 #include "pns_router.h"
 
 #include "pns_component_dragger.h"
@@ -55,20 +56,29 @@ bool COMPONENT_DRAGGER::Start( const VECTOR2I& aP, ITEM_SET& aPrimitives )
 
     std::unordered_set<LINKED_ITEM*> seenItems;
 
+    auto anchorPosition =
+            []( ITEM* aItem )
+            {
+                if( aItem->Kind() == ITEM::SOLID_T )
+                    return static_cast<SOLID*>( aItem )->Pos();
+
+                return static_cast<VIA*>( aItem )->Pos();
+            };
+
     auto addLinked =
-            [&]( SOLID* aSolid, const JOINT* aJoint, LINKED_ITEM* aItem, VECTOR2I aOffset = {} )
+            [&]( ITEM* aAnchor, const JOINT* aJoint, LINKED_ITEM* aItem, VECTOR2I aOffset = {} )
             {
                 if( seenItems.count( aItem ) )
                     return;
 
                 seenItems.insert( aItem );
 
-                // Segments that go directly between two linked pads are special-cased
+                // Segments that go directly between two linked anchors are special-cased
                 VECTOR2I otherEnd = ( aJoint->Pos() == aItem->Anchor( 0 ) ) ? aItem->Anchor( 1 )
                                                                             : aItem->Anchor( 0 );
                 const JOINT* otherJoint = m_world->FindJoint( otherEnd, aItem->Layer(), aItem->Net() );
 
-                if( otherJoint && otherJoint->LinkCount( ITEM::SOLID_T ) )
+                if( otherJoint && otherJoint->LinkCount( ITEM::SOLID_T | ITEM::VIA_T ) )
                 {
                     for( ITEM* otherItem : otherJoint->LinkList() )
                     {
@@ -83,11 +93,11 @@ bool COMPONENT_DRAGGER::Start( const VECTOR2I& aP, ITEM_SET& aPrimitives )
                 int segIndex;
                 DRAGGED_CONNECTION cn;
 
-                cn.origLine    = m_world->AssembleLine( aItem, &segIndex );
-                cn.attachedPad = aSolid;
-                cn.offset      = aOffset;
+                cn.origLine     = m_world->AssembleLine( aItem, &segIndex );
+                cn.attachedItem = aAnchor;
+                cn.offset       = aOffset;
 
-                // Lines that go directly between two linked pads are also special-cased
+                // Lines that go directly between two linked anchors are also special-cased
                 const SHAPE_LINE_CHAIN& line = cn.origLine.CLine();
                 const JOINT* jA = m_world->FindJoint( line.CPoint( 0 ), aItem->Layer(), aItem->Net() );
                 const JOINT* jB = m_world->FindJoint( line.CLastPoint(), aItem->Layer(), aItem->Net() );
@@ -95,7 +105,7 @@ bool COMPONENT_DRAGGER::Start( const VECTOR2I& aP, ITEM_SET& aPrimitives )
                 wxASSERT( jA == aJoint || jB == aJoint );
                 const JOINT* jSearch = ( jA == aJoint ) ? jB : jA;
 
-                if( jSearch && jSearch->LinkCount( ITEM::SOLID_T ) )
+                if( jSearch && jSearch->LinkCount( ITEM::SOLID_T | ITEM::VIA_T ) )
                 {
                     for( ITEM* otherItem : jSearch->LinkList() )
                     {
@@ -114,37 +124,59 @@ bool COMPONENT_DRAGGER::Start( const VECTOR2I& aP, ITEM_SET& aPrimitives )
 
     for( ITEM* item : aPrimitives.Items() )
     {
-        if( item->Kind() != ITEM::SOLID_T )
+        if( !item->OfKind( ITEM::SOLID_T | ITEM::VIA_T ) )
             continue;
 
-        SOLID* solid = static_cast<SOLID*>( item );
-
-        m_solids.insert( solid );
+        item->Unmark( MK_LOCKED );
+        m_anchors.insert( item );
 
         if( !item->IsRoutable() )
             continue;
 
-        const JOINT* jt = m_world->FindJoint( solid->Pos(), solid );
+        VECTOR2I position = anchorPosition( item );
+        std::set<const JOINT*> joints;
 
-        for( ITEM* link : jt->LinkList() )
+        if( item->Kind() == ITEM::SOLID_T )
         {
-            if( link->OfKind( ITEM::SEGMENT_T | ITEM::ARC_T ) )
-                addLinked( solid, jt, static_cast<LINKED_ITEM*>( link ) );
+            if( const JOINT* joint = m_world->FindJoint( position, item ) )
+                joints.insert( joint );
+        }
+        else
+        {
+            for( int layer = item->Layers().Start(); layer <= item->Layers().End(); ++layer )
+            {
+                if( const JOINT* joint = m_world->FindJoint( position, layer, item->Net() ) )
+                    joints.insert( joint );
+            }
         }
 
-        std::vector<JOINT*> extraJoints;
-
-        m_world->QueryJoints( solid->Hull().BBox(), extraJoints, solid->Layers(),
-                              ITEM::SEGMENT_T | ITEM::ARC_T );
-
-        for( JOINT* extraJoint : extraJoints )
+        for( const JOINT* joint : joints )
         {
-            if( extraJoint->Net() == jt->Net() && extraJoint->LinkCount() == 1 )
+            for( ITEM* link : joint->LinkList() )
             {
-                LINKED_ITEM* li = static_cast<LINKED_ITEM*>( extraJoint->LinkList().front() );
+                if( link->OfKind( ITEM::SEGMENT_T | ITEM::ARC_T ) )
+                    addLinked( item, joint, static_cast<LINKED_ITEM*>( link ) );
+            }
+        }
 
-                if( li->Collide( solid, m_world, solid->Layer() ) )
-                    addLinked( solid, extraJoint, li, extraJoint->Pos() - solid->Pos() );
+        // Pads may contain a dangling track endpoint away from their anchor point.
+        if( item->Kind() == ITEM::SOLID_T )
+        {
+            SOLID* solid = static_cast<SOLID*>( item );
+            std::vector<JOINT*> extraJoints;
+
+            m_world->QueryJoints( solid->Hull().BBox(), extraJoints, solid->Layers(),
+                                  ITEM::SEGMENT_T | ITEM::ARC_T );
+
+            for( JOINT* extraJoint : extraJoints )
+            {
+                if( extraJoint->Net() == solid->Net() && extraJoint->LinkCount() == 1 )
+                {
+                    LINKED_ITEM* li = static_cast<LINKED_ITEM*>( extraJoint->LinkList().front() );
+
+                    if( li->Collide( solid, m_world, solid->Layer() ) )
+                        addLinked( solid, extraJoint, li, extraJoint->Pos() - solid->Pos() );
+                }
             }
         }
     }
@@ -157,6 +189,15 @@ bool COMPONENT_DRAGGER::Drag( const VECTOR2I& aP )
 {
     assert( m_world );
 
+    auto anchorPosition =
+            []( ITEM* aItem )
+            {
+                if( aItem->Kind() == ITEM::SOLID_T )
+                    return static_cast<SOLID*>( aItem )->Pos();
+
+                return static_cast<VIA*>( aItem )->Pos();
+            };
+
     m_world->KillChildren();
     m_currentNode = m_world->Branch();
 
@@ -165,23 +206,39 @@ bool COMPONENT_DRAGGER::Drag( const VECTOR2I& aP )
 
     m_draggedItems.Clear();
 
-    for( SOLID* s : m_solids )
+    for( ITEM* anchor : m_anchors )
     {
-        VECTOR2I               p_next = aP - m_p0 + s->Pos();
-        std::unique_ptr<SOLID> snew( static_cast<SOLID*>( s->Clone() ) );
-        snew->SetPos( p_next );
+        VECTOR2I p_next;
 
-        m_draggedItems.Add( snew.get() );
-        m_currentNode->Add( std::move( snew ) );
+        if( anchor->Kind() == ITEM::SOLID_T )
+        {
+            SOLID* solid = static_cast<SOLID*>( anchor );
+            p_next = aP - m_p0 + solid->Pos();
 
-        if( !s->IsRoutable() )
+            std::unique_ptr<SOLID> moved( static_cast<SOLID*>( solid->Clone() ) );
+            moved->SetPos( p_next );
+            m_draggedItems.Add( moved.get() );
+            m_currentNode->Add( std::move( moved ) );
+        }
+        else
+        {
+            VIA* via = static_cast<VIA*>( anchor );
+            p_next = aP - m_p0 + via->Pos();
+
+            std::unique_ptr<VIA> moved( via->Clone() );
+            moved->SetPos( p_next );
+            m_draggedItems.Add( moved.get() );
+            m_currentNode->Add( std::move( moved ) );
+        }
+
+        if( !anchor->IsRoutable() )
             continue;
 
         for( DRAGGED_CONNECTION& l : m_conns )
         {
-            if( l.attachedPad == s )
+            if( l.attachedItem == anchor )
             {
-                l.p_orig = s->Pos() + l.offset;
+                l.p_orig = anchorPosition( anchor ) + l.offset;
                 l.p_next = p_next + l.offset;
             }
         }

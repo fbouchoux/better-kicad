@@ -3226,7 +3226,8 @@ bool ROUTER_TOOL::CanInlineDrag( int aDragMode )
 
     if( selection.Size() == 1 )
     {
-        return selection.Front()->IsType( GENERAL_COLLECTOR::DraggableItems );
+        return selection.Front()->IsType( GENERAL_COLLECTOR::DraggableItems )
+               || dynamic_cast<PCB_VIA_STACK*>( selection.Front() );
     }
     else if( selection.CountType( PCB_FOOTPRINT_T ) == (size_t) selection.Size() )
     {
@@ -3264,11 +3265,13 @@ int ROUTER_TOOL::InlineDrag( const TOOL_EVENT& aEvent )
     std::deque<EDA_ITEM*> selectedItems = selection.GetItems();
 
     BOARD_ITEM* item = static_cast<BOARD_ITEM*>( selection.Front() );
+    PCB_VIA_STACK* viaStack = dynamic_cast<PCB_VIA_STACK*>( item );
 
     if( item->Type() != PCB_TRACE_T
          && item->Type() != PCB_VIA_T
          && item->Type() != PCB_ARC_T
-         && item->Type() != PCB_FOOTPRINT_T )
+         && item->Type() != PCB_FOOTPRINT_T
+         && !viaStack )
     {
         return 0;
     }
@@ -3334,7 +3337,18 @@ int ROUTER_TOOL::InlineDrag( const TOOL_EVENT& aEvent )
     // Snapping uses ViewGetLOD(), which uses the layerVisibilityCache.  Make sure it's up-to-date.
     m_toolMgr->GetView()->SyncLayerVisibilityCache();
 
-    if( !footprints.empty() )
+    if( viaStack )
+    {
+        for( BOARD_ITEM* member : viaStack->GetBoardItems() )
+        {
+            if( member->Type() != PCB_VIA_T )
+                continue;
+
+            if( PNS::ITEM* pnsItem = m_router->GetWorld()->FindItemByParent( member ) )
+                itemsToDrag.Add( pnsItem );
+        }
+    }
+    else if( !footprints.empty() )
     {
         if( footprints.size() == 1 )
             singleFootprintDrag = true;
@@ -3475,6 +3489,9 @@ int ROUTER_TOOL::InlineDrag( const TOOL_EVENT& aEvent )
     }
 
     int dragMode = aEvent.Parameter<int> ();
+
+    if( viaStack )
+        dragMode |= PNS::DM_COMPONENT;
 
     bool dragStarted = m_router->StartDragging( p, itemsToDrag, dragMode );
 

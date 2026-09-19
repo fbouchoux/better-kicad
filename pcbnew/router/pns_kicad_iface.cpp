@@ -38,6 +38,7 @@
 #include <pcb_tablecell.h>
 #include <pcb_dimension.h>
 #include <board_commit.h>
+#include <generators/pcb_via_stack.h>
 #include <eda_group.h>
 #include <layer_ids.h>
 #include <optional>
@@ -2715,10 +2716,22 @@ void PNS_KICAD_IFACE::modifyBoardItem( PNS::ITEM* aItem )
     {
         PCB_VIA*  via_board = static_cast<PCB_VIA*>( board_item );
         PNS::VIA* via = static_cast<PNS::VIA*>( aItem );
+        VECTOR2I  newPosition( via->Pos().x, via->Pos().y );
+
+        if( PCB_VIA_STACK* stack = dynamic_cast<PCB_VIA_STACK*>( via_board->GetParentGroup() ) )
+        {
+            VECTOR2I offset = newPosition - via_board->GetPosition();
+
+            if( offset != VECTOR2I() && !m_viaStackOffsets.contains( stack ) )
+            {
+                m_commit->Modify( stack, nullptr, RECURSE_MODE::NO_RECURSE );
+                m_viaStackOffsets.emplace( stack, offset );
+            }
+        }
 
         m_commit->Modify( via_board );
 
-        via_board->SetPosition( VECTOR2I( via->Pos().x, via->Pos().y ) );
+        via_board->SetPosition( newPosition );
         via_board->SetWidth( PADSTACK::TEMP_ALL_LAYERS, via->Diameter( 0 ) );
         via_board->SetDrill( via->Drill() );
         via_board->SetNet( static_cast<NETINFO_ITEM*>( via->Net() ) );
@@ -2957,6 +2970,13 @@ void PNS_KICAD_IFACE::Commit()
     }
 
     m_fpOffsets.clear();
+
+    // The router has already moved every generated member.  Move only the stored stack
+    // definition so later regeneration keeps the routed position.
+    for( const auto& [ stack, offset ] : m_viaStackOffsets )
+        stack->MoveDefinition( offset );
+
+    m_viaStackOffsets.clear();
 
     for( const auto& [ src, items ] : m_replacementMap )
     {

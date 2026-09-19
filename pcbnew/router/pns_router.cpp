@@ -238,7 +238,9 @@ bool ROUTER::StartDragging( const VECTOR2I& aP, ITEM_SET aStartItems, int aDragM
 
     GetRuleResolver()->ClearCaches();
 
-    if( aStartItems.Count( ITEM::SOLID_T ) == aStartItems.Size() )
+    if( aStartItems.Count( ITEM::SOLID_T ) == aStartItems.Size()
+        || ( ( aDragMode & DM_COMPONENT )
+             && aStartItems.Count( ITEM::SOLID_T | ITEM::VIA_T ) == aStartItems.Size() ) )
     {
         m_dragger = std::make_unique<COMPONENT_DRAGGER>( this );
         m_state = DRAG_COMPONENT;
