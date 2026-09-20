@@ -67,6 +67,10 @@
 #include <cstdint>
 
 
+// Keep unconnected pads nearly black while retaining their copper geometry
+static const COLOR4D s_colorfulUnconnectedColor( 0.05, 0.05, 0.05, 1.0 );
+
+
 static uint32_t colorfulNameHash( const wxString& aName )
 {
     uint32_t hash = 2166136261u;
@@ -81,6 +85,9 @@ static uint32_t colorfulNameHash( const wxString& aName )
 static COLOR4D colorfulNetColor( const NETINFO_ITEM& aNet )
 {
     wxString name = aNet.GetNetname().AfterLast( '/' );
+
+    if( aNet.GetShortNetname().StartsWith( wxT( "unconnected-(" ) ) )
+        return s_colorfulUnconnectedColor;
 
     if( name.CmpNoCase( wxT( "GND" ) ) == 0 )
         return COLOR4D( 0.24, 0.24, 0.24, 1.0 );
@@ -3550,6 +3557,9 @@ void APPEARANCE_CONTROLS::updateColorfulNetColors()
         return;
 
     std::map<int, COLOR4D> colors;
+
+    // Use a dark color for pads without an assigned net
+    colors.emplace( NETINFO_LIST::UNCONNECTED, s_colorfulUnconnectedColor );
 
     for( NETINFO_ITEM* net : board->GetNetInfo() )
     {
