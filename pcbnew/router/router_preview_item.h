@@ -51,6 +51,7 @@ class ROUTER_IFACE;
 #define PNS_HOVER_ITEM 2
 #define PNS_SEMI_SOLID 4
 #define PNS_COLLISION  8
+#define PNS_DRAGGED_ITEM 16
 
 
 class ROUTER_PREVIEW_ITEM : public EDA_ITEM

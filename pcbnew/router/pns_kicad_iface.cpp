@@ -2512,6 +2512,10 @@ void PNS_KICAD_IFACE::DisplayItem( const PNS::ITEM* aItem, int aClearance, bool 
        if( aItem->IsVirtual() )
         return;
 
+    // Preserve net colors when dragging existing copper, but use layer colors for new routes
+    if( aEdit )
+        aFlags |= PNS_DRAGGED_ITEM;
+
     if( ZONE* zone = dynamic_cast<ZONE*>( aItem->Parent() ) )
     {
         if( zone->GetIsRuleArea() )
