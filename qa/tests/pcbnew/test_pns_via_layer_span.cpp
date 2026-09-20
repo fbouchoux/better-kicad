@@ -166,6 +166,7 @@ BOOST_FIXTURE_TEST_CASE( ViaOnlyTransitionCanContinueRouting, VIA_LAYER_SPAN_FIX
     router.SyncWorld();
     router.LoadSettings( &routingSettings );
     router.SetMode( PNS::PNS_MODE_ROUTE_SINGLE );
+    routingSettings.SetMode( PNS::RM_Shove );
 
     const int      pnsFront = iface.GetPNSLayerFromBoardLayer( F_Cu );
     const int      pnsTarget = iface.GetPNSLayerFromBoardLayer( In1_Cu );
@@ -213,7 +214,11 @@ BOOST_FIXTURE_TEST_CASE( ViaOnlyTransitionCanContinueRouting, VIA_LAYER_SPAN_FIX
 
     BOOST_CHECK( hasTargetTrace );
 
-    router.StopRouting();
+    // Match the routing tool's cancel path, which aborts the placement before its common commit
+    // teardown.  The shove springback stack still contains pointers to the discarded nodes.
+    router.AbortPlacement();
+    router.CommitRouting();
+    BOOST_CHECK( !router.RoutingInProgress() );
 }
 
 

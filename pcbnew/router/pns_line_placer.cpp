@@ -1782,7 +1782,9 @@ bool LINE_PLACER::HasPlacedAnything() const
 
 bool LINE_PLACER::CommitPlacement()
 {
-    if( Settings().Mode() == PNS::RM_Shove )
+    // AbortPlacement deletes the shove nodes and clears m_lastNode, so do not consult the stale
+    // springback stack when the routing tool enters its common commit teardown path.
+    if( Settings().Mode() == PNS::RM_Shove && m_lastNode )
     {
         m_shove->RewindToLastLockedNode();
         m_lastNode = m_shove->CurrentNode();
