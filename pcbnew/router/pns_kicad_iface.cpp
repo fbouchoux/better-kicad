@@ -868,7 +868,10 @@ bool PNS_PCBNEW_RULE_RESOLVER::HasUserDefinedPhysicalConstraint()
 int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* aB,
                                          bool aUseClearanceEpsilon )
 {
-    const bool bothOwned = aA && aB && aA->Owner() && aB->Owner();
+    // Temporary segments at different positions can resolve to different geometry-based rules
+    const bool                  bothOwned = aA && aB && aA->Owner() && aB->Owner();
+    std::shared_ptr<DRC_ENGINE> drcEngine = m_board->GetDesignSettings().m_DRCEngine;
+    const bool                  cacheTemporary = !drcEngine || !drcEngine->HasGeometryDependentRules();
 
     if( bothOwned )
     {
@@ -878,7 +881,7 @@ int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* a
         if( it != m_clearanceCache.end() )
             return it->second;
     }
-    else if( aA && aB )
+    else if( aA && aB && cacheTemporary )
     {
         // Search cache (used for temporary items within an algorithm)
         auto it = m_tempClearanceCache.find( TEMP_CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon ) );
@@ -979,7 +982,7 @@ int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* a
     // clear on their own.
     if( bothOwned )
         m_clearanceCache[CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon )] = rv;
-    else if( aA && aB )
+    else if( aA && aB && cacheTemporary )
         m_tempClearanceCache[TEMP_CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon )] = rv;
 
     return rv;

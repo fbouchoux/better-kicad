@@ -303,9 +303,8 @@ NODE::OPT_OBSTACLE NODE::NearestObstacle( const LINE* aLine,
 
     for( int i = 0; i < aLine->CLine().SegmentCount(); i++ )
     {
-        // Note: Clearances between &s and other items are cached,
-        // which means they'll be the same for all segments in the line.
-        // Disabling the cache will lead to slowness.
+        // Property-only rules share cached clearances across equivalent temporary segments
+        // Geometry-dependent rules bypass that cache so every segment resolves at its own position
 
         const SEGMENT s( *aLine, aLine->CLine().CSegment( i ) );
         QueryColliding( &s, obstacleSet, aOpts );
@@ -511,9 +510,8 @@ NODE::OPT_OBSTACLE NODE::CheckColliding( const ITEM* aItemA, const COLLISION_SEA
 
         for( int i = 0; i < l.SegmentCount(); i++ )
         {
-            // Note: Clearances between &s and other items are cached,
-            // which means they'll be the same for all segments in the line.
-            // Disabling the cache will lead to slowness.
+            // Property-only rules share cached clearances across equivalent temporary segments
+            // Geometry-dependent rules bypass that cache so every segment resolves at its own position
 
             const SEGMENT s( *line, l.CSegment( i ) );
             n += QueryColliding( &s, obs, aOpts );
