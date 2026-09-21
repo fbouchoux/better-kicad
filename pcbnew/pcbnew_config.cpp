@@ -89,6 +89,7 @@ bool PCB_EDIT_FRAME::LoadProjectSettings()
     }
 
     renderSettings->DisableColorfulMode();
+    renderSettings->SetSmartPadColorMode( false );
     std::map<int, KIGFX::COLOR4D>& netColors = renderSettings->GetNetColorMap();
     netColors.clear();
 

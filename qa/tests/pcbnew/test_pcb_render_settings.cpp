@@ -107,6 +107,75 @@ BOOST_AUTO_TEST_CASE( AllPointLayersMapToLayerPoints )
 }
 
 
+/**
+ * Test that smart pad coloring distinguishes electrical roles without changing tracks.
+ */
+BOOST_AUTO_TEST_CASE( SmartPadColorsUseElectricalRole )
+{
+    const KIGFX::COLOR4D layerColor( 0.25, 0.45, 0.7, 1.0 );
+    m_settings.SetLayerColor( F_Cu, layerColor );
+    m_settings.SetSmartPadColorMode( true );
+
+    BOARD board;
+
+    // Create representative ground, power and signal nets
+    NETINFO_ITEM* groundNet = new NETINFO_ITEM( &board, wxT( "/power/AGND" ), 1 );
+    NETINFO_ITEM* powerNet = new NETINFO_ITEM( &board, wxT( "+3V3" ), 2 );
+    NETINFO_ITEM* signalNet = new NETINFO_ITEM( &board, wxT( "SCLK" ), 3 );
+    board.Add( groundNet );
+    board.Add( powerNet );
+    board.Add( signalNet );
+
+    FOOTPRINT* footprint = new FOOTPRINT( &board );
+    board.Add( footprint );
+
+    // Add one pad for each role and leave the no-connect pad without a net
+    auto addPad = [&]( const wxString& aPinType, NETINFO_ITEM* aNet )
+    {
+        PAD* pad = new PAD( footprint );
+        pad->SetAttribute( PAD_ATTRIB::SMD );
+        pad->SetLayer( F_Cu );
+        pad->SetPinType( aPinType );
+
+        if( aNet )
+            pad->SetNet( aNet );
+
+        footprint->Add( pad );
+        return pad;
+    };
+
+    PAD* groundPad = addPad( wxT( "power_in" ), groundNet );
+    PAD* powerPad = addPad( wxT( "passive" ), powerNet );
+    PAD* signalPad = addPad( wxT( "input" ), signalNet );
+    PAD* noConnectPad = addPad( wxT( "passive" ), nullptr );
+    noConnectPad->SetPinFunction( wxT( "NC" ) );
+    PAD* typedNoConnectPad = addPad( wxT( "input+no_connect" ), nullptr );
+
+    KIGFX::COLOR4D groundColor =
+            m_settings.GetColor( groundPad, PAD_COPPER_LAYER_FOR( F_Cu ) );
+    KIGFX::COLOR4D powerColor =
+            m_settings.GetColor( powerPad, PAD_COPPER_LAYER_FOR( F_Cu ) );
+    KIGFX::COLOR4D signalColor =
+            m_settings.GetColor( signalPad, PAD_COPPER_LAYER_FOR( F_Cu ) );
+    KIGFX::COLOR4D noConnectColor =
+            m_settings.GetColor( noConnectPad, PAD_COPPER_LAYER_FOR( F_Cu ) );
+    KIGFX::COLOR4D typedNoConnectColor =
+            m_settings.GetColor( typedNoConnectPad, PAD_COPPER_LAYER_FOR( F_Cu ) );
+
+    BOOST_CHECK( powerColor.GetBrightness() > layerColor.GetBrightness() );
+    BOOST_CHECK( groundColor.GetBrightness() < layerColor.GetBrightness() );
+    BOOST_CHECK( noConnectColor.GetBrightness() < groundColor.GetBrightness() );
+    BOOST_CHECK( typedNoConnectColor == noConnectColor );
+    BOOST_CHECK( signalColor == layerColor );
+
+    // A power-net track must retain the unmodified copper layer color
+    PCB_TRACK track( &board );
+    track.SetLayer( F_Cu );
+    track.SetNet( powerNet );
+    BOOST_CHECK( m_settings.GetColor( &track, F_Cu ) == layerColor );
+}
+
+
 BOOST_AUTO_TEST_SUITE_END()
 
 

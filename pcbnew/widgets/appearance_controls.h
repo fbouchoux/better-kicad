@@ -380,6 +380,8 @@ private:
 
     void updateColorfulNetColors();
 
+    void onSmartPadColorMode( wxCommandEvent& aEvent );
+
     void onRatsnestMode( wxCommandEvent& aEvent );
 
     void onNetclassContextMenu( wxCommandEvent& aEvent );
@@ -480,6 +482,7 @@ private:
     wxRadioButton*       m_rbNetColorRatsnest;
     wxRadioButton*       m_rbNetColorOff;
     wxCheckBox*          m_cbColorfulMode;
+    wxCheckBox*          m_cbSmartPadColorMode;
     wxStaticText*        m_txtRatsnestVisibility;
     wxRadioButton*       m_rbRatsnestAllLayers;
     wxRadioButton*       m_rbRatsnestVisLayers;

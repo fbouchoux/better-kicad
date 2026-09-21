@@ -85,6 +85,101 @@
 using namespace KIGFX;
 
 
+/**
+ * Return true when a pad belongs to a commonly named ground net.
+ */
+static bool isGroundPad( const PAD& aPad )
+{
+    wxString netName = aPad.GetShortNetname().AfterLast( '/' ).Upper();
+
+    // Recognize GND, AGND, GND_A, VSS and their common qualified forms
+    return netName.StartsWith( wxT( "GND" ) ) || netName.EndsWith( wxT( "GND" ) )
+           || netName.Contains( wxT( "_GND_" ) ) || netName.StartsWith( wxT( "VSS" ) )
+           || netName.EndsWith( wxT( "VSS" ) ) || netName.Contains( wxT( "_VSS_" ) );
+}
+
+
+/**
+ * Return true when a pad is explicitly marked or named as no-connect.
+ */
+static bool isNoConnectPad( const PAD& aPad )
+{
+    if( aPad.IsNoConnectPad() )
+        return true;
+
+    wxString pinFunction = aPad.GetPinFunction().Upper();
+    bool numberedNc = pinFunction.length() > 2 && pinFunction.StartsWith( wxT( "NC" ) )
+                      && pinFunction[2] >= '0' && pinFunction[2] <= '9';
+
+    if( pinFunction == wxT( "NC" ) || pinFunction == wxT( "N/C" )
+        || pinFunction == wxT( "DNC" ) || pinFunction.StartsWith( wxT( "NC_" ) )
+        || numberedNc )
+    {
+        return true;
+    }
+
+    wxString netName = aPad.GetShortNetname().AfterLast( '/' ).Upper();
+
+    // Some imported designs encode the role in the net name rather than the pin type
+    return netName == wxT( "NC" ) || netName == wxT( "N/C" ) || netName == wxT( "DNC" )
+           || netName.StartsWith( wxT( "NC_" ) ) || netName.StartsWith( wxT( "DNC_" ) )
+           || netName.StartsWith( wxT( "UNCONNECTED-(" ) );
+}
+
+
+/**
+ * Return true when a pad has a power pin type or belongs to a commonly named supply net.
+ */
+static bool isPowerPad( const PAD& aPad )
+{
+    wxString pinType = aPad.GetPinType().BeforeFirst( '+' );
+
+    if( pinType == wxT( "power_in" ) || pinType == wxT( "power_out" ) )
+        return true;
+
+    wxString netName = aPad.GetShortNetname().AfterLast( '/' ).Upper();
+
+    // Include passive pads connected to conventional supply net names
+    return netName.StartsWith( wxT( "+" ) ) || netName.StartsWith( wxT( "VCC" ) )
+           || netName.StartsWith( wxT( "VDD" ) ) || netName.StartsWith( wxT( "VEE" ) )
+           || netName.StartsWith( wxT( "VBAT" ) ) || netName.StartsWith( wxT( "VIN" ) )
+           || netName.StartsWith( wxT( "VOUT" ) ) || netName.StartsWith( wxT( "PWR" ) );
+}
+
+
+/**
+ * Adjust a copper layer color to identify the pad's electrical role.
+ */
+static COLOR4D smartPadColor( const PAD& aPad, const COLOR4D& aLayerColor )
+{
+    // No-connect pads should remain barely visible so their geometry is still clear
+    if( isNoConnectPad( aPad ) )
+        return aLayerColor.Darkened( 0.95 );
+
+    // Ground pads use a darker form of the copper layer color
+    if( isGroundPad( aPad ) )
+        return aLayerColor.Darkened( 0.58 );
+
+    // Power pads use a lighter and more saturated form of the copper layer color
+    if( isPowerPad( aPad ) )
+    {
+        double hue;
+        double saturation;
+        double lightness;
+        aLayerColor.ToHSL( hue, saturation, lightness );
+
+        COLOR4D color = aLayerColor;
+        color.FromHSL( hue, std::min( 1.0, saturation * 1.35 + 0.15 ),
+                       std::min( 1.0, lightness + 0.18 ) );
+        color.a = aLayerColor.a;
+        return color;
+    }
+
+    // Signal and unspecified pads keep the normal copper layer color
+    return aLayerColor;
+}
+
+
 PCBNEW_SETTINGS* pcbconfig()
 {
     return dynamic_cast<PCBNEW_SETTINGS*>( Kiface().KifaceSettings() );
@@ -388,8 +483,33 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
                                                     : m_highlightEnabled && m_highlightNetcodes.contains( netCode );
     const bool selected = aItem->IsSelected();
 
+    // Smart pad colors take precedence over net colors and never affect other copper items
+    if( m_smartPadColorMode && aItem->Type() == PCB_PAD_T
+        && ( IsCopperLayer( aLayer ) || IsPadCopperLayer( originalLayer ) ) )
+    {
+        int copperLayer = aLayer;
+
+        if( IsPadCopperLayer( originalLayer ) )
+            copperLayer = originalLayer - LAYER_PAD_COPPER_START;
+
+        color = smartPadColor( *static_cast<const PAD*>( aItem ), m_layerColors.at( copperLayer ) );
+
+        if( selected )
+        {
+            // Selection brightening overrides highlighting
+            color.Brighten( m_selectFactor );
+        }
+        else if( highlightEnabled )
+        {
+            // Preserve the normal net highlighting behavior for smart-colored pads
+            if( highlighted )
+                color.Brighten( m_highlightFactor );
+            else
+                color.Darken( 1.0 - m_highlightFactor );
+        }
+    }
     // Apply net color overrides
-    if( conItem && IsCopperLayer( aLayer )
+    else if( conItem && IsCopperLayer( aLayer )
         && ( m_colorfulMode ? aItem->Type() == PCB_PAD_T
                             : m_netColorMode == NET_COLOR_MODE::ALL ) )
     {

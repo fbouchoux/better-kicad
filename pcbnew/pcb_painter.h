@@ -153,6 +153,9 @@ public:
 
     bool IsColorfulMode() const { return m_colorfulMode; }
 
+    bool IsSmartPadColorMode() const { return m_smartPadColorMode; }
+    void SetSmartPadColorMode( bool aEnabled ) { m_smartPadColorMode = aEnabled; }
+
     void SetColorfulNetColors( std::map<int, KIGFX::COLOR4D> aColors )
     {
         m_colorfulNetColors = std::move( aColors );
@@ -222,6 +225,9 @@ protected:
     ///< Temporary net colors for placement; never written to project settings.
     std::map<int, KIGFX::COLOR4D> m_colorfulNetColors;
     bool m_colorfulMode = false;
+
+    ///< Color pads by electrical role while preserving their copper layer hue
+    bool m_smartPadColorMode = false;
 
     ///< Set of net codes that should not have their ratsnest displayed
     std::set<int> m_hiddenNets;

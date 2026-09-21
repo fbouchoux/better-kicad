@@ -859,6 +859,13 @@ void APPEARANCE_CONTROLS::createControls()
     m_cbColorfulMode->Show( !m_isFpEditor );
     netDisplayOptionsSizer->Add( m_cbColorfulMode, 0, wxLEFT | wxBOTTOM, 5 );
 
+    m_cbSmartPadColorMode = new wxCheckBox( netDisplayPane, wxID_ANY, _( "Smart pad color" ) );
+    m_cbSmartPadColorMode->SetFont( infoFont );
+    m_cbSmartPadColorMode->SetToolTip(
+            _( "Shade pads by electrical role using their copper layer color; tracks are unchanged" ) );
+    m_cbSmartPadColorMode->Show( !m_isFpEditor );
+    netDisplayOptionsSizer->Add( m_cbSmartPadColorMode, 0, wxLEFT | wxBOTTOM, 5 );
+
     //// Ratsnest display
 
     hotkey = PCB_ACTIONS::ratsnestModeCycle.GetHotKey();
@@ -923,6 +930,8 @@ void APPEARANCE_CONTROLS::createControls()
     m_rbNetColorOff->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onNetColorMode, this );
     m_rbNetColorRatsnest->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onNetColorMode, this );
     m_cbColorfulMode->Bind( wxEVT_CHECKBOX, &APPEARANCE_CONTROLS::onColorfulMode, this );
+    m_cbSmartPadColorMode->Bind( wxEVT_CHECKBOX,
+                                &APPEARANCE_CONTROLS::onSmartPadColorMode, this );
 
     m_rbRatsnestAllLayers->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onRatsnestMode, this );
     m_rbRatsnestVisLayers->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onRatsnestMode, this );
@@ -1202,8 +1211,11 @@ void APPEARANCE_CONTROLS::OnBoardChanged()
     if( m_board != m_frame->GetBoard() )
     {
         KIGFX::RENDER_SETTINGS* rs = m_frame->GetCanvas()->GetView()->GetPainter()->GetSettings();
-        static_cast<KIGFX::PCB_RENDER_SETTINGS*>( rs )->DisableColorfulMode();
+        KIGFX::PCB_RENDER_SETTINGS* settings = static_cast<KIGFX::PCB_RENDER_SETTINGS*>( rs );
+        settings->DisableColorfulMode();
+        settings->SetSmartPadColorMode( false );
         m_cbColorfulMode->SetValue( false );
+        m_cbSmartPadColorMode->SetValue( false );
     }
 
     m_netsGrid->ClearSelection();
@@ -1621,7 +1633,9 @@ void APPEARANCE_CONTROLS::UpdateDisplayOptions()
     }
 
     KIGFX::RENDER_SETTINGS* rs = m_frame->GetCanvas()->GetView()->GetPainter()->GetSettings();
-    m_cbColorfulMode->SetValue( static_cast<KIGFX::PCB_RENDER_SETTINGS*>( rs )->IsColorfulMode() );
+    KIGFX::PCB_RENDER_SETTINGS* settings = static_cast<KIGFX::PCB_RENDER_SETTINGS*>( rs );
+    m_cbColorfulMode->SetValue( settings->IsColorfulMode() );
+    m_cbSmartPadColorMode->SetValue( settings->IsSmartPadColorMode() );
 
     m_cbFlipBoard->SetValue( m_frame->GetDisplayOptions().m_FlipBoardView );
 
@@ -2828,6 +2842,10 @@ void APPEARANCE_CONTROLS::rebuildNets()
     m_cbColorfulMode->SetLabel( _( "Colorful mode" ) );
     m_cbColorfulMode->SetToolTip( _( "Temporarily color ratsnest lines and pads by net name; generated colors are not saved" ) );
 
+    m_cbSmartPadColorMode->SetLabel( _( "Smart pad color" ) );
+    m_cbSmartPadColorMode->SetToolTip(
+            _( "Shade pads by electrical role using their copper layer color; tracks are unchanged" ) );
+
     hotkey = PCB_ACTIONS::ratsnestModeCycle.GetHotKey();
 
     if( hotkey )
@@ -3585,6 +3603,23 @@ void APPEARANCE_CONTROLS::onColorfulMode( wxCommandEvent& aEvent )
     m_netsTable->Rebuild();
     m_frame->GetCanvas()->GetView()->UpdateAllLayersColor();
     m_frame->GetCanvas()->RedrawRatsnest();
+    m_frame->GetCanvas()->Refresh();
+    passOnFocus();
+}
+
+
+/**
+ * Toggle pad coloring based on electrical roles.
+ */
+void APPEARANCE_CONTROLS::onSmartPadColorMode( wxCommandEvent& aEvent )
+{
+    KIGFX::RENDER_SETTINGS* rs = m_frame->GetCanvas()->GetView()->GetPainter()->GetSettings();
+    KIGFX::PCB_RENDER_SETTINGS* settings = static_cast<KIGFX::PCB_RENDER_SETTINGS*>( rs );
+
+    settings->SetSmartPadColorMode( m_cbSmartPadColorMode->GetValue() );
+
+    // Refresh cached colors without rebuilding board geometry
+    m_frame->GetCanvas()->GetView()->UpdateAllLayersColor();
     m_frame->GetCanvas()->Refresh();
     passOnFocus();
 }
