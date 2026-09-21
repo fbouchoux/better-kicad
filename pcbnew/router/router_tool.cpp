@@ -72,7 +72,6 @@ using namespace std::placeholders;
 #include <tool/tool_manager.h>
 #include <tool/tool_menu.h>
 #include <tools/pcb_actions.h>
-#include <tools/pcb_control.h>
 #include <tools/pcb_selection_tool.h>
 #include <board_commit.h>
 #include <board_stackup_manager/board_stackup.h>
@@ -1247,37 +1246,9 @@ static PCB_LAYER_ID adjacentVisibleCopperLayer( BOARD* aBoard, PCB_LAYER_ID aCur
 
 int ROUTER_TOOL::onLayerCommand( const TOOL_EVENT& aEvent )
 {
-    if( IsToolActive() && !m_router->RoutingInProgress() )
-    {
-        PCB_CONTROL* control = m_toolMgr->GetTool<PCB_CONTROL>();
-
-        wxCHECK( control, 0 );
-
-        if( aEvent.IsAction( &PCB_ACTIONS::layerNext )
-            || aEvent.IsAction( &PCB_ACTIONS::layerPrev ) )
-        {
-            PCB_LAYER_ID currentLayer = frame()->GetActiveLayer();
-
-            if( IsCopperLayer( currentLayer ) )
-            {
-                PCB_LAYER_ID targetLayer = adjacentVisibleCopperLayer(
-                        board(), currentLayer, aEvent.IsAction( &PCB_ACTIONS::layerNext ) );
-
-                if( targetLayer != UNDEFINED_LAYER )
-                    frame()->SwitchLayer( targetLayer );
-            }
-            else if( aEvent.IsAction( &PCB_ACTIONS::layerNext ) )
-                control->LayerNext( aEvent );
-            else
-                control->LayerPrev( aEvent );
-        }
-        else if( aEvent.IsAction( &PCB_ACTIONS::layerToggle ) )
-            control->LayerToggle( aEvent );
-        else
-            control->LayerSwitch( aEvent );
-
+    // PCB_CONTROL owns layer changes until interactive routing starts
+    if( !IsToolActive() || !m_router->RoutingInProgress() )
         return 0;
-    }
 
     handleLayerSwitch( aEvent, false );
     UpdateMessagePanel();
@@ -1646,8 +1617,33 @@ void ROUTER_TOOL::configureViaPlacement( const TOOL_EVENT& aEvent, PCB_LAYER_ID 
 
 int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
 {
-    if( !IsToolActive() || !m_router->RoutingInProgress() || !m_router->Placer() )
+    if( !IsToolActive() )
         return 0;
+
+    // Hand shared Smart Via hotkeys back to the normal layer controls while routing is idle
+    if( !m_router->RoutingInProgress() || !m_router->Placer() )
+    {
+        switch( aEvent.Parameter<int>() )
+        {
+        case SMART_VIA_TOP:
+            m_toolMgr->RunAction( PCB_ACTIONS::layerTop );
+            break;
+
+        case SMART_VIA_BOTTOM:
+            m_toolMgr->RunAction( PCB_ACTIONS::layerBottom );
+            break;
+
+        case SMART_VIA_NEXT:
+            m_toolMgr->RunAction( PCB_ACTIONS::layerNext );
+            break;
+
+        case SMART_VIA_PREVIOUS:
+            m_toolMgr->RunAction( PCB_ACTIONS::layerPrev );
+            break;
+        }
+
+        return 0;
+    }
 
     if( m_router->Mode() != PNS::PNS_MODE_ROUTE_SINGLE )
     {

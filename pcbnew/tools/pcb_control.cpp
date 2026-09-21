@@ -476,11 +476,45 @@ int PCB_CONTROL::LayerSwitch( const TOOL_EVENT& aEvent )
 }
 
 
+/**
+ * Find the adjacent visible copper layer without wrapping around the physical stack
+ */
+static PCB_LAYER_ID adjacentVisibleCopperLayer( BOARD* aBoard, PCB_LAYER_ID aCurrentLayer,
+                                                bool aNext )
+{
+    LSEQ layers = LSET::AllCuMask( aBoard->GetCopperLayerCount() ).UIOrder();
+    int  currentIndex = -1;
+
+    // Locate the active layer in physical stack order
+    for( int i = 0; i < static_cast<int>( layers.size() ); ++i )
+    {
+        if( layers[i] == aCurrentLayer )
+        {
+            currentIndex = i;
+            break;
+        }
+    }
+
+    if( currentIndex < 0 )
+        return UNDEFINED_LAYER;
+
+    // Skip hidden layers and stop at the physical end of the stack
+    int step = aNext ? 1 : -1;
+
+    for( int i = currentIndex + step; i >= 0 && i < static_cast<int>( layers.size() ); i += step )
+    {
+        if( aBoard->IsLayerVisible( layers[i] ) )
+            return layers[i];
+    }
+
+    return UNDEFINED_LAYER;
+}
+
+
 int PCB_CONTROL::LayerNext( const TOOL_EVENT& aEvent )
 {
-    BOARD*       brd        = board();
-    PCB_LAYER_ID layer      = m_frame->GetActiveLayer();
-    bool         wraparound = false;
+    BOARD*       brd = board();
+    PCB_LAYER_ID layer = m_frame->GetActiveLayer();
 
     if( !IsCopperLayer( layer ) )
     {
@@ -488,48 +522,10 @@ int PCB_CONTROL::LayerNext( const TOOL_EVENT& aEvent )
         return 0;
     }
 
-    LSET cuMask = LSET::AllCuMask( brd->GetCopperLayerCount() );
-    LSEQ layerStack = cuMask.UIOrder();
+    PCB_LAYER_ID targetLayer = adjacentVisibleCopperLayer( brd, layer, true );
 
-    int ii = 0;
-
-    // Find the active layer in list
-    for( ; ii < (int) layerStack.size(); ii++ )
-    {
-        if( layer == layerStack[ii] )
-            break;
-    }
-
-    // Find the next visible layer in list
-    for( ; ii < (int) layerStack.size(); ii++ )
-    {
-        int jj = ii + 1;
-
-        if( jj >= (int) layerStack.size() )
-            jj = 0;
-
-        layer = layerStack[jj];
-
-        if( brd->IsLayerVisible( layer ) )
-            break;
-
-        if( jj == 0 )   // the end of list is reached. Try from the beginning
-        {
-            if( wraparound )
-            {
-                wxBell();
-                return 0;
-            }
-            else
-            {
-                wraparound = true;
-                ii = -1;
-            }
-        }
-    }
-
-    wxCHECK( IsCopperLayer( layer ), 0 );
-    m_frame->SwitchLayer( layer );
+    if( targetLayer != UNDEFINED_LAYER )
+        m_frame->SwitchLayer( targetLayer );
 
     return 0;
 }
@@ -537,9 +533,8 @@ int PCB_CONTROL::LayerNext( const TOOL_EVENT& aEvent )
 
 int PCB_CONTROL::LayerPrev( const TOOL_EVENT& aEvent )
 {
-    BOARD*       brd        = board();
-    PCB_LAYER_ID layer      = m_frame->GetActiveLayer();
-    bool         wraparound = false;
+    BOARD*       brd = board();
+    PCB_LAYER_ID layer = m_frame->GetActiveLayer();
 
     if( !IsCopperLayer( layer ) )
     {
@@ -547,48 +542,10 @@ int PCB_CONTROL::LayerPrev( const TOOL_EVENT& aEvent )
         return 0;
     }
 
-    LSET cuMask = LSET::AllCuMask( brd->GetCopperLayerCount() );
-    LSEQ layerStack = cuMask.UIOrder();
+    PCB_LAYER_ID targetLayer = adjacentVisibleCopperLayer( brd, layer, false );
 
-    int ii = 0;
-
-    // Find the active layer in list
-    for( ; ii < (int) layerStack.size(); ii++ )
-    {
-        if( layer == layerStack[ii] )
-            break;
-    }
-
-    // Find the previous visible layer in list
-    for( ; ii >= 0; ii-- )
-    {
-        int jj = ii - 1;
-
-        if( jj < 0 )
-            jj = (int) layerStack.size() - 1;
-
-        layer = layerStack[jj];
-
-        if( brd->IsLayerVisible( layer ) )
-            break;
-
-        if( ii == 0 )   // the start of list is reached. Try from the last
-        {
-            if( wraparound )
-            {
-                wxBell();
-                return 0;
-            }
-            else
-            {
-                wraparound = true;
-                ii = 1;
-            }
-        }
-    }
-
-    wxCHECK( IsCopperLayer( layer ), 0 );
-    m_frame->SwitchLayer( layer );
+    if( targetLayer != UNDEFINED_LAYER )
+        m_frame->SwitchLayer( targetLayer );
 
     return 0;
 }
