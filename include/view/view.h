@@ -120,6 +120,16 @@ public:
     int Query( const BOX2I& aRect, std::vector<LAYER_ITEM_PAIR>& aResult ) const;
 
     /**
+     * Run a function on visible items from one layer that touch or are within a rectangle.
+     *
+     * @param aLayer the layer whose spatial index should be queried.
+     * @param aRect the query bounds.
+     * @param aFunc the function to execute; return true to continue, false to end the query.
+     */
+    void Query( int aLayer, const BOX2I& aRect,
+                const std::function<bool( VIEW_ITEM* )>& aFunc ) const;
+
+    /**
      * Run a function on all visible items that touch or are within the rectangle \a aRect.
      *
      * @param aFunc the function to be executed; return true to continue, false to end query.

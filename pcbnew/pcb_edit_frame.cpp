@@ -31,9 +31,12 @@
 #include <wx/filedlg.h>
 #include <wx/hyperlink.h>
 #include <wx/socket.h>
+#include <wx/statusbr.h>
+#include <wx/utils.h>
 #include <wx/wupdlock.h>
 
 #include <advanced_config.h>
+#include <board_connected_item.h>
 #include <connectivity/connectivity_data.h>
 #include <kiface_base.h>
 #include <kiway.h>
@@ -83,6 +86,7 @@
 #include <board_text_var_adapter.h>
 #include <text_var_dependency.h>
 #include <view/view.h>
+#include <view/view_controls.h>
 #include <wildcards_and_files_ext.h>
 #include <functional>
 #include <pcb_barcode.h>
@@ -853,6 +857,11 @@ void PCB_EDIT_FRAME::detachTextVarTracker()
 
 void PCB_EDIT_FRAME::SetBoard( BOARD* aBoard, bool aBuildConnectivity, PROGRESS_REPORTER* aReporter )
 {
+    // The cached hover UUID belongs to the board that is about to be replaced
+    m_hoverNetItem.reset();
+    m_hoverNetStatus.clear();
+    m_netHoverPositionValid = false;
+
     // PCB_BASE_FRAME::SetBoard() deletes m_pcb; detach tracker consumers first.
     if( m_pcb )
     {
@@ -2356,6 +2365,203 @@ void PCB_EDIT_FRAME::OnModify()
 
     if( !GetTitle().StartsWith( wxT( "*" ) ) )
         UpdateTitle();
+}
+
+
+/**
+ * Remove this feature's status text without disturbing messages from other tools.
+ */
+void PCB_EDIT_FRAME::clearNetHoverStatus()
+{
+    wxStatusBar* statusBar = GetStatusBar();
+
+    if( statusBar && !m_hoverNetStatus.IsEmpty()
+        && statusBar->GetStatusText( 0 ) == m_hoverNetStatus )
+        SetStatusText( wxEmptyString, 0 );
+
+    m_hoverNetStatus.clear();
+    m_hoverNetItem.reset();
+}
+
+
+/**
+ * Update the net hint under the cursor from the active layer's spatial indexes.
+ */
+void PCB_EDIT_FRAME::updateNetHoverStatus()
+{
+    BOARD* board = GetBoard();
+
+    if( !board || !GetCanvas() )
+    {
+        clearNetHoverStatus();
+        m_netHoverPositionValid = false;
+        return;
+    }
+
+    KIGFX::VIEW_CONTROLS* controls = GetCanvas()->GetViewControls();
+    VECTOR2I              screenCursor = controls->GetMousePosition( false );
+    PCB_LAYER_ID          activeLayer = GetActiveLayer();
+
+    // Ignore keyboard, zoom, and other tool events that did not move the physical pointer
+    if( m_netHoverPositionValid && screenCursor == m_lastNetHoverScreenPosition
+        && activeLayer == m_lastNetHoverLayer )
+        return;
+
+    // Active editing tools must never pay for hover hit testing
+    if( interactiveOperationInProgress() )
+    {
+        clearNetHoverStatus();
+        m_netHoverPositionValid = false;
+        return;
+    }
+
+    wxMouseState mouseState = wxGetMouseState();
+
+    // Mouse-button motion belongs to selection, dragging, or navigation rather than hinting
+    if( mouseState.LeftIsDown() || mouseState.MiddleIsDown() || mouseState.RightIsDown() )
+    {
+        clearNetHoverStatus();
+        m_netHoverPositionValid = false;
+        return;
+    }
+
+    KIGFX::VIEW* view = GetCanvas()->GetView();
+
+    if( !view )
+        return;
+
+    VECTOR2I cursor = controls->GetMousePosition();
+
+    m_lastNetHoverScreenPosition = screenCursor;
+    m_lastNetHoverLayer = activeLayer;
+    m_netHoverPositionValid = true;
+
+    auto viewLayerForItem =
+            [activeLayer]( const BOARD_CONNECTED_ITEM& aItem ) -> int
+            {
+                if( IsCopperLayer( activeLayer ) )
+                {
+                    if( aItem.Type() == PCB_PAD_T )
+                        return PAD_COPPER_LAYER_FOR( activeLayer );
+
+                    if( aItem.Type() == PCB_VIA_T )
+                        return VIA_COPPER_LAYER_FOR( activeLayer );
+                }
+
+                return activeLayer;
+            };
+
+    auto hitOnActiveLayer =
+            [&]( BOARD_CONNECTED_ITEM* aItem ) -> bool
+            {
+                if( !aItem || !aItem->IsOnLayer( activeLayer ) || !view->IsVisible( aItem ) )
+                    return false;
+
+                int viewLayer = viewLayerForItem( *aItem );
+
+                if( aItem->ViewGetLOD( viewLayer, view ) >= view->GetScale() )
+                    return false;
+
+                if( aItem->Type() == PCB_PAD_T )
+                    return static_cast<PAD*>( aItem )->HitTest( cursor, 0, activeLayer );
+
+                if( aItem->Type() == PCB_VIA_T )
+                    return aItem->GetEffectiveShape( activeLayer )->Collide( cursor );
+
+                if( aItem->Type() == PCB_TRACE_T || aItem->Type() == PCB_ARC_T )
+                    return aItem->HitTest( cursor );
+
+                return false;
+            };
+
+    BOARD_CONNECTED_ITEM* hovered = nullptr;
+
+    // Staying within the previous item avoids even an R-tree lookup
+    if( m_hoverNetItem )
+        hovered = dynamic_cast<BOARD_CONNECTED_ITEM*>( board->GetCachedItemById( *m_hoverNetItem ) );
+
+    if( !hitOnActiveLayer( hovered ) )
+    {
+        hovered = nullptr;
+        BOX2I queryBounds( cursor, VECTOR2I( 1, 1 ) );
+
+        auto queryLayer =
+                [&]( int aViewLayer )
+                {
+                    if( hovered )
+                        return;
+
+                    view->Query( aViewLayer, queryBounds,
+                            [&]( KIGFX::VIEW_ITEM* aViewItem ) -> bool
+                            {
+                                if( !aViewItem->IsBOARD_ITEM() )
+                                    return true;
+
+                                BOARD_ITEM* item = static_cast<BOARD_ITEM*>( aViewItem );
+
+                                if( item->Type() != PCB_PAD_T && item->Type() != PCB_TRACE_T
+                                    && item->Type() != PCB_ARC_T && item->Type() != PCB_VIA_T )
+                                    return true;
+
+                                BOARD_CONNECTED_ITEM* connected =
+                                        static_cast<BOARD_CONNECTED_ITEM*>( item );
+
+                                if( hitOnActiveLayer( connected ) )
+                                {
+                                    hovered = connected;
+                                    return false;
+                                }
+
+                                return true;
+                            } );
+                };
+
+        // Pads and vias use per-copper-layer render indexes; tracks use the board layer index
+        if( IsCopperLayer( activeLayer ) )
+        {
+            queryLayer( PAD_COPPER_LAYER_FOR( activeLayer ) );
+            queryLayer( VIA_COPPER_LAYER_FOR( activeLayer ) );
+        }
+
+        queryLayer( activeLayer );
+    }
+
+    wxString newStatus;
+
+    if( hovered )
+    {
+        wxString netName = hovered->GetNetname();
+        newStatus = wxString::Format( _( "Net: %s" ),
+                                      netName.IsEmpty() ? _( "<no net>" )
+                                                        : UnescapeString( netName ) );
+        m_hoverNetItem = hovered->m_Uuid;
+    }
+    else
+    {
+        m_hoverNetItem.reset();
+    }
+
+    // Avoid asking wxWidgets to relayout or repaint an unchanged status field
+    if( newStatus == m_hoverNetStatus )
+        return;
+
+    if( newStatus.IsEmpty() )
+        clearNetHoverStatus();
+    else
+    {
+        m_hoverNetStatus = newStatus;
+        SetStatusText( m_hoverNetStatus, 0 );
+    }
+}
+
+
+/**
+ * Update the PCB editor status bar.
+ */
+void PCB_EDIT_FRAME::UpdateStatusBar()
+{
+    PCB_BASE_FRAME::UpdateStatusBar();
+    updateNetHoverStatus();
 }
 
 

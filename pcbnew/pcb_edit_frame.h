@@ -25,6 +25,7 @@
 #include "zones.h"
 #include <mail_type.h>
 #include <settings/app_settings.h>
+#include <optional>
 #include <variant>
 
 class PCB_SCREEN;
@@ -289,6 +290,11 @@ public:
      * to update auxiliary information.
      */
     void OnModify() override;
+
+    /**
+     * Update the standard status fields and the passive net hint under the cursor.
+     */
+    void UpdateStatusBar() override;
 
     /**
      * Change the currently active layer to \a aLayer and also update the #APPEARANCE_CONTROLS.
@@ -771,6 +777,16 @@ protected:
     bool interactiveOperationInProgress() const;
 
     /**
+     * Remove the passive net hint without overwriting a status message owned by another feature.
+     */
+    void clearNetHoverStatus();
+
+    /**
+     * Update the passive net hint using only the active layer's canvas indexes.
+     */
+    void updateNetHoverStatus();
+
+    /**
      * Load the given filename but sets the path to the current project path.
      *
      * @param full file path of file to be imported.
@@ -897,6 +913,13 @@ private:
      * Keep track of viewport so that track net labels can be adjusted when it changes.
      */
     BOX2D             m_lastNetnamesViewport;
+
+    // Cache the last hover query so non-motion tool events and movement within one item are cheap
+    std::optional<KIID> m_hoverNetItem;
+    VECTOR2I            m_lastNetHoverScreenPosition;
+    PCB_LAYER_ID        m_lastNetHoverLayer = UNDEFINED_LAYER;
+    bool                m_netHoverPositionValid = false;
+    wxString            m_hoverNetStatus;
 
     wxTimer*          m_eventCounterTimer;
 
