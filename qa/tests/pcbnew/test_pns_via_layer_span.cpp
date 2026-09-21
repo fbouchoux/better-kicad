@@ -223,6 +223,93 @@ BOOST_FIXTURE_TEST_CASE( ViaOnlyTransitionCanContinueRouting, VIA_LAYER_SPAN_FIX
 
 
 /**
+ * Replacing an active Smart Via can change a fallback PTH into a preset-backed microvia.
+ * The preview must update the via type and layer span, not only its diameter and drill.
+ */
+BOOST_FIXTURE_TEST_CASE( ActiveViaPreviewUpdatesTypeAndSpan, VIA_LAYER_SPAN_FIXTURE )
+{
+    KI_TEST::LoadBoard( m_settingsManager, "issue24772/fw16_MCIO8i", m_board );
+    BOOST_REQUIRE( m_board );
+
+    FOOTPRINT* connector = m_board->FindFootprintByReference( wxT( "MCIO1" ) );
+    BOOST_REQUIRE( connector );
+
+    PAD* pad = connector->FindPadByNumber( wxT( "B5" ) );
+    BOOST_REQUIRE( pad );
+
+    PNS::ROUTER           router;
+    PNS_KICAD_IFACE_BASE  iface;
+    PNS::ROUTING_SETTINGS routingSettings( nullptr, "" );
+
+    iface.SetBoard( m_board.get() );
+    router.SetInterface( &iface );
+    router.ClearWorld();
+    router.SyncWorld();
+    router.LoadSettings( &routingSettings );
+    router.SetMode( PNS::PNS_MODE_ROUTE_SINGLE );
+
+    const int      pnsFront    = iface.GetPNSLayerFromBoardLayer( F_Cu );
+    const int      pnsFallback = iface.GetPNSLayerFromBoardLayer( In3_Cu );
+    const int      pnsTarget   = iface.GetPNSLayerFromBoardLayer( In2_Cu );
+    const VECTOR2I startPoint = pad->GetPosition();
+    PNS::ITEM*     startItem = router.GetWorld()->FindItemByParent( pad );
+
+    BOOST_REQUIRE( startItem );
+
+    // Start with the fallback PTH that Smart Via uses when no preset matches the destination
+    PNS::SIZES_SETTINGS sizes( router.Sizes() );
+    iface.SetStartLayerFromPCBNew( F_Cu );
+    BOOST_REQUIRE( iface.ImportSizes( sizes, startItem, nullptr, startPoint ) );
+    sizes.ClearLayerPairs();
+    sizes.AddLayerPair( pnsFront, pnsFallback );
+    sizes.SetViaType( VIATYPE::THROUGH );
+    router.UpdateSizes( sizes );
+    router.Settings().SetAllowDRCViolations( true );
+
+    BOOST_REQUIRE( router.StartRouting( startPoint, startItem, pnsFront ) );
+    router.ToggleViaPlacement();
+
+    const VECTOR2I endPoint = startPoint + VECTOR2I( 0, pcbIUScale.mmToIU( 5.0 ) );
+    BOOST_REQUIRE( router.Move( endPoint, nullptr ) );
+
+    // Replace the active PTH with the smaller microvia selected by the matching preset
+    sizes.SetViaDiameter( pcbIUScale.mmToIU( 0.2 ) );
+    sizes.SetViaDrill( pcbIUScale.mmToIU( 0.1 ) );
+    sizes.SetViaType( VIATYPE::MICROVIA );
+    sizes.ClearLayerPairs();
+    sizes.AddLayerPair( pnsFront, pnsTarget );
+    router.UpdateSizes( sizes );
+    BOOST_REQUIRE( router.Move( endPoint, nullptr ) );
+
+    const PNS::VIA* headVia = nullptr;
+    const PNS::ITEM_SET traces = router.Placer()->Traces();
+
+    for( const PNS::ITEM* item : traces.CItems() )
+    {
+        if( item->Kind() != PNS::ITEM::LINE_T )
+            continue;
+
+        const PNS::LINE* line = static_cast<const PNS::LINE*>( item );
+
+        if( line->EndsWithVia() )
+        {
+            headVia = &line->Via();
+            break;
+        }
+    }
+
+    BOOST_REQUIRE( headVia );
+    BOOST_CHECK( headVia->ViaType() == VIATYPE::MICROVIA );
+    BOOST_CHECK_EQUAL( headVia->Layers().Start(), pnsFront );
+    BOOST_CHECK_EQUAL( headVia->Layers().End(), pnsTarget );
+    BOOST_CHECK_EQUAL( headVia->HoleLayers().Start(), pnsFront );
+    BOOST_CHECK_EQUAL( headVia->HoleLayers().End(), pnsTarget );
+
+    router.StopRouting();
+}
+
+
+/**
  * A via holds its copper span in the primary drill layers, so the router must not write the hole
  * layers back over the layer pair.  This pins the premise for dropping that write back, that the
  * two ranges are the same range for every via the router knows about.

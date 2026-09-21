@@ -1922,8 +1922,13 @@ void LINE_PLACER::UpdateSizes( const SIZES_SETTINGS& aSizes )
 
         if( m_head.EndsWithVia() )
         {
-            m_head.SetViaDiameter( m_sizes.ViaDiameter() );
-            m_head.SetViaDrill( m_sizes.ViaDrill() );
+            // Rebuild the complete preview because Smart Via replacement can change its type
+            // and layer span as well as its dimensions
+            VECTOR2I viaPosition = m_head.Via().Pos();
+            VIA      via = makeVia( viaPosition );
+
+            m_head.RemoveVia();
+            m_head.AppendVia( via );
         }
     }
 }
