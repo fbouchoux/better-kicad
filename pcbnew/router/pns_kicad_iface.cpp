@@ -65,7 +65,9 @@
 
 #include <wx/log.h>
 
+#include <algorithm>
 #include <memory>
+#include <tuple>
 #include <unordered_set>
 
 #include <advanced_config.h>
@@ -127,9 +129,9 @@ namespace std
 }
 
 
-// Identifies a pair of items for the temporary clearance cache by their properties (net, layers,
-// kind) instead of their memory address. Items with the same properties get the same clearance
-// from the rules, so they share one cache entry.
+// Identifies a pair of items for the temporary clearance cache by their rule-relevant properties
+// instead of their memory address. Geometry is also included for temporary segments when the
+// board has position-dependent rules.
 struct TEMP_CLEARANCE_CACHE_KEY
 {
     struct SIDE
@@ -140,26 +142,24 @@ struct TEMP_CLEARANCE_CACHE_KEY
         int         layerEnd;
         int         kind;
         bool        freePad;
+        bool        hasGeometry;
+        SEG         geometry;
+        int         width;
+
+        auto values() const
+        {
+            return std::tie( boardItem, net, layerStart, layerEnd, kind, freePad, hasGeometry,
+                             geometry, width );
+        }
 
         bool operator==( const SIDE& o ) const
         {
-            return boardItem == o.boardItem && net == o.net && layerStart == o.layerStart && layerEnd == o.layerEnd
-                   && kind == o.kind && freePad == o.freePad;
+            return values() == o.values();
         }
 
         bool operator<( const SIDE& o ) const
         {
-            if( boardItem != o.boardItem )
-                return boardItem < o.boardItem;
-            if( net != o.net )
-                return net < o.net;
-            if( layerStart != o.layerStart )
-                return layerStart < o.layerStart;
-            if( layerEnd != o.layerEnd )
-                return layerEnd < o.layerEnd;
-            if( kind != o.kind )
-                return kind < o.kind;
-            return freePad < o.freePad;
+            return values() < o.values();
         }
     };
 
@@ -167,21 +167,53 @@ struct TEMP_CLEARANCE_CACHE_KEY
     SIDE B;
     bool Flag;
 
-    static SIDE makeSide( const PNS::ITEM* aItem )
+    /**
+     * Check whether the temporary cache can represent all geometry used for rule evaluation
+     */
+    static bool canCacheGeometry( const PNS::ITEM* aItem )
     {
-        return SIDE{ (const void*) aItem->BoardItem(),
-                     (const void*) aItem->Net(),
-                     aItem->Layers().Start(),
-                     aItem->Layers().End(),
-                     (int) aItem->Kind(),
-                     aItem->IsFreePad() };
+        return aItem->BoardItem() || aItem->Kind() == PNS::ITEM::SEGMENT_T;
     }
 
-    TEMP_CLEARANCE_CACHE_KEY( const PNS::ITEM* aA, const PNS::ITEM* aB, bool aFlag ) :
+    /**
+     * Build one side of the key, including exact temporary segment geometry when needed
+     */
+    static SIDE makeSide( const PNS::ITEM* aItem, bool aIncludeGeometry )
+    {
+        SIDE side{ (const void*) aItem->BoardItem(),
+                   (const void*) aItem->Net(),
+                   aItem->Layers().Start(),
+                   aItem->Layers().End(),
+                   (int) aItem->Kind(),
+                   aItem->IsFreePad(),
+                   false,
+                   SEG(),
+                   0 };
+
+        // Board items have stable geometry identified by their pointer
+        if( !aIncludeGeometry || side.boardItem )
+            return side;
+
+        // Collision queries decompose temporary lines into straight segments
+        const PNS::SEGMENT* segment = static_cast<const PNS::SEGMENT*>( aItem );
+        SEG                 geometry( segment->Anchor( 0 ), segment->Anchor( 1 ) );
+
+        // Track direction does not affect geometry-dependent rule results
+        if( geometry.B < geometry.A )
+            geometry = geometry.Reversed();
+
+        side.hasGeometry = true;
+        side.geometry = geometry;
+        side.width = segment->Width();
+        return side;
+    }
+
+    TEMP_CLEARANCE_CACHE_KEY( const PNS::ITEM* aA, const PNS::ITEM* aB, bool aFlag,
+                              bool aIncludeGeometry ) :
             Flag( aFlag )
     {
-        SIDE sa = makeSide( aA );
-        SIDE sb = makeSide( aB );
+        SIDE sa = makeSide( aA, aIncludeGeometry );
+        SIDE sb = makeSide( aB, aIncludeGeometry );
 
         // Canonical order so the key is symmetric in (A, B)
         if( sb < sa )
@@ -212,7 +244,10 @@ struct hash<TEMP_CLEARANCE_CACHE_KEY>
         {
             hash_combine( retval, hash<const void*>()( s->boardItem ), hash<const void*>()( s->net ),
                           hash<int>()( s->layerStart ), hash<int>()( s->layerEnd ), hash<int>()( s->kind ),
-                          hash<bool>()( s->freePad ) );
+                          hash<bool>()( s->freePad ), hash<bool>()( s->hasGeometry ),
+                          hash<int>()( s->geometry.A.x ), hash<int>()( s->geometry.A.y ),
+                          hash<int>()( s->geometry.B.x ), hash<int>()( s->geometry.B.y ),
+                          hash<int>()( s->width ) );
         }
 
         hash_combine( retval, hash<bool>()( k.Flag ) );
@@ -871,7 +906,13 @@ int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* a
     // Temporary segments at different positions can resolve to different geometry-based rules
     const bool                  bothOwned = aA && aB && aA->Owner() && aB->Owner();
     std::shared_ptr<DRC_ENGINE> drcEngine = m_board->GetDesignSettings().m_DRCEngine;
-    const bool                  cacheTemporary = !drcEngine || !drcEngine->HasGeometryDependentRules();
+    const bool                  geometryDependent =
+            drcEngine && drcEngine->HasGeometryDependentRules();
+    const bool cacheTemporary =
+            aA && aB
+            && ( !geometryDependent
+                 || ( TEMP_CLEARANCE_CACHE_KEY::canCacheGeometry( aA )
+                      && TEMP_CLEARANCE_CACHE_KEY::canCacheGeometry( aB ) ) );
 
     if( bothOwned )
     {
@@ -884,7 +925,8 @@ int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* a
     else if( aA && aB && cacheTemporary )
     {
         // Search cache (used for temporary items within an algorithm)
-        auto it = m_tempClearanceCache.find( TEMP_CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon ) );
+        auto it = m_tempClearanceCache.find(
+                TEMP_CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon, geometryDependent ) );
 
         if( it != m_tempClearanceCache.end() )
             return it->second;
@@ -982,8 +1024,9 @@ int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* a
     // clear on their own.
     if( bothOwned )
         m_clearanceCache[CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon )] = rv;
-    else if( aA && aB && cacheTemporary )
-        m_tempClearanceCache[TEMP_CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon )] = rv;
+    else if( cacheTemporary )
+        m_tempClearanceCache[
+                TEMP_CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon, geometryDependent )] = rv;
 
     return rv;
 }
