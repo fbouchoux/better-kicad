@@ -402,7 +402,12 @@ bool DRAGGER::dragMarkObstacles( const VECTOR2I& aP )
         dragged.ClearLinks();
 
         if( m_mode == DM_SEGMENT )
-            dragged.DragSegment( aP, m_draggedSegmentIndex );
+        {
+            dragged.DragSegment( aP, m_draggedSegmentIndex, false,
+                                 Router()->GetRuleResolver()->HasGeometryDependentRules() );
+
+            simplifyRuleEquivalentCollinearSegments( dragged );
+        }
         else
             dragged.DragCorner( aP, m_draggedSegmentIndex, m_freeAngleMode );
 
@@ -574,10 +579,14 @@ void DRAGGER::optimizeAndUpdateDraggedLine( LINE& aDragged, const LINE& aOrig, c
     aDragged.Unmark();
 
     OPTIMIZER optimizer( m_lastNode );
+    bool preserveRuleAreaVertices = simplifyRuleEquivalentCollinearSegments( aDragged );
+    int effort = 0;
 
-    int effort = OPTIMIZER::MERGE_SEGMENTS;
+    // Collinear vertices separate segments that can resolve to different rule-area constraints
+    if( !preserveRuleAreaVertices )
+        effort |= OPTIMIZER::MERGE_SEGMENTS;
 
-    if( Settings().SmoothDraggedSegments() )
+    if( Settings().SmoothDraggedSegments() && !preserveRuleAreaVertices )
         effort |= OPTIMIZER::MERGE_COLINEAR;
 
     if( Settings().GetRestrictAngles() )
@@ -616,6 +625,56 @@ void DRAGGER::optimizeAndUpdateDraggedLine( LINE& aDragged, const LINE& aOrig, c
     m_lastNode->Add( draggedPostOpt );
     m_draggedItems.Clear();
     m_draggedItems.Add( draggedPostOpt );
+}
+
+
+/**
+ * Simplify collinear segments that share the same effective router constraints.
+ */
+bool DRAGGER::simplifyRuleEquivalentCollinearSegments( LINE& aLine ) const
+{
+    PNS::RULE_RESOLVER* resolver = Router()->GetRuleResolver();
+
+    if( !resolver->HasGeometryDependentRules() )
+        return false;
+
+    SHAPE_LINE_CHAIN& line = aLine.Line();
+    bool              preservedRuleBoundary = false;
+
+    // Remove duplicate points before comparing adjacent non-degenerate segments
+    line.RemoveDuplicatePoints();
+
+    for( int segmentIndex = 0; segmentIndex < line.SegmentCount() - 1; )
+    {
+        if( line.IsArcSegment( segmentIndex ) || line.IsArcSegment( segmentIndex + 1 ) )
+        {
+            segmentIndex++;
+            continue;
+        }
+
+        SEG firstGeometry = line.CSegment( segmentIndex );
+        SEG secondGeometry = line.CSegment( segmentIndex + 1 );
+
+        if( !firstGeometry.Collinear( secondGeometry ) )
+        {
+            segmentIndex++;
+            continue;
+        }
+
+        PNS::SEGMENT first( aLine, firstGeometry );
+        PNS::SEGMENT second( aLine, secondGeometry );
+
+        if( resolver->HaveEquivalentRuleConstraints( &first, &second ) )
+        {
+            line.Remove( segmentIndex + 1 );
+            continue;
+        }
+
+        preservedRuleBoundary = true;
+        segmentIndex++;
+    }
+
+    return preservedRuleBoundary;
 }
 
 
@@ -732,7 +791,12 @@ bool DRAGGER::dragWalkaround( const VECTOR2I& aP )
         dragged.SetSnapThreshhold( thresh );
 
         if( m_mode == DM_SEGMENT )
-            dragged.DragSegment( aP, m_draggedSegmentIndex );
+        {
+            dragged.DragSegment( aP, m_draggedSegmentIndex, false,
+                                 Router()->GetRuleResolver()->HasGeometryDependentRules() );
+
+            simplifyRuleEquivalentCollinearSegments( dragged );
+        }
         else
             dragged.DragCorner( aP, m_draggedSegmentIndex );
 
@@ -820,7 +884,12 @@ bool DRAGGER::dragShove( const VECTOR2I& aP )
         draggedPreShove.SetSnapThreshhold( thresh );
 
         if( m_mode == DM_SEGMENT )
-            draggedPreShove.DragSegment( aP, m_draggedSegmentIndex );
+        {
+            draggedPreShove.DragSegment( aP, m_draggedSegmentIndex, false,
+                                         Router()->GetRuleResolver()->HasGeometryDependentRules() );
+
+            simplifyRuleEquivalentCollinearSegments( draggedPreShove );
+        }
         else
             draggedPreShove.DragCorner( aP, m_draggedSegmentIndex );
 

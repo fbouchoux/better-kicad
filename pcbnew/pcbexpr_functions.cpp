@@ -18,6 +18,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <memory>
 #include <mutex>
@@ -808,6 +809,102 @@ private:
 #define MISSING_AREA_ARG( f ) \
     wxString::Format( _( "Missing rule-area argument (A, B, or rule-area name) to %s." ), f )
 
+
+namespace
+{
+struct TRANSIENT_TRACK_AREA_CACHE_KEY
+{
+    const BOARD*  board;
+    KIID          boardUuid;
+    int           boardTimestamp;
+    VECTOR2I      start;
+    VECTOR2I      end;
+    int           width;
+    PCB_LAYER_ID  itemLayer;
+    PCB_LAYER_ID  layer;
+    int           constraint;
+    wxString      selector;
+
+    bool operator==( const TRANSIENT_TRACK_AREA_CACHE_KEY& aOther ) const
+    {
+        return board == aOther.board && boardUuid == aOther.boardUuid
+               && boardTimestamp == aOther.boardTimestamp
+               && start == aOther.start && end == aOther.end && width == aOther.width
+               && itemLayer == aOther.itemLayer && layer == aOther.layer
+               && constraint == aOther.constraint
+               && selector == aOther.selector;
+    }
+};
+
+
+class TRANSIENT_TRACK_AREA_CACHE
+{
+public:
+    /**
+     * Look up an enclosedByArea result for exact temporary track geometry.
+     */
+    bool Get( const TRANSIENT_TRACK_AREA_CACHE_KEY& aKey, bool& aResult ) const
+    {
+        for( const ENTRY& entry : m_entries )
+        {
+            if( entry.valid && entry.key == aKey )
+            {
+                aResult = entry.result;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Store an enclosedByArea result in the bounded per-thread cache.
+     */
+    void Set( const TRANSIENT_TRACK_AREA_CACHE_KEY& aKey, bool aResult )
+    {
+        ENTRY& entry = m_entries[m_nextEntry];
+        entry.key = aKey;
+        entry.result = aResult;
+        entry.valid = true;
+        m_nextEntry = ( m_nextEntry + 1 ) % m_entries.size();
+    }
+
+private:
+    struct ENTRY
+    {
+        TRANSIENT_TRACK_AREA_CACHE_KEY key{};
+        bool                           result = false;
+        bool                           valid = false;
+    };
+
+    // A small ring covers the active router segments without growing over a long drag
+    std::array<ENTRY, 16> m_entries;
+    std::size_t           m_nextEntry = 0;
+};
+
+
+/**
+ * Build a direction-independent cache key for a temporary straight router segment.
+ */
+TRANSIENT_TRACK_AREA_CACHE_KEY makeTransientTrackAreaCacheKey( const PCB_TRACK* aTrack,
+                                                               const wxString& aSelector,
+                                                               PCB_LAYER_ID aLayer,
+                                                               int aConstraint )
+{
+    VECTOR2I start = aTrack->GetStart();
+    VECTOR2I end = aTrack->GetEnd();
+
+    // Segment direction does not affect area enclosure
+    if( end < start )
+        std::swap( start, end );
+
+    const BOARD* board = aTrack->GetBoard();
+
+    return { board, board->m_Uuid, board->GetTimeStamp(), start, end, aTrack->GetWidth(),
+             aTrack->GetLayer(), aLayer, aConstraint, aSelector };
+}
+} // namespace
+
 static void doIntersectsAreaFunc( LIBEVAL::CONTEXT* aCtx, void* self, bool aForKeepout )
 {
     PCBEXPR_CONTEXT* context = static_cast<PCBEXPR_CONTEXT*>( aCtx );
@@ -986,6 +1083,23 @@ static void enclosedByAreaFunc( LIBEVAL::CONTEXT* aCtx, void* self )
                 bool           transient = ( item->GetFlags() & ROUTER_TRANSIENT ) != 0;
                 const wxString selector = arg->AsString();
 
+                // Router collision checks evaluate one moving segment against many obstacles
+                thread_local TRANSIENT_TRACK_AREA_CACHE transientTrackCache;
+                TRANSIENT_TRACK_AREA_CACHE_KEY transientKey{};
+                bool enclosedByArea = false;
+                bool cacheTransient = transient && item->Type() == PCB_TRACE_T
+                                      && selector != wxT( "A" ) && selector != wxT( "B" );
+
+                if( cacheTransient )
+                {
+                    transientKey = makeTransientTrackAreaCacheKey( static_cast<PCB_TRACK*>( item ),
+                                                                   selector, layer,
+                                                                   context->GetConstraint() );
+
+                    if( transientTrackCache.Get( transientKey, enclosedByArea ) )
+                        return enclosedByArea ? 1.0 : 0.0;
+                }
+
                 // See intersectsCourtyard: "A"/"B" are pair-relative and not memoizable here.
                 bool memoize = !transient && selector != wxT( "A" ) && selector != wxT( "B" );
 
@@ -1073,6 +1187,10 @@ static void enclosedByAreaFunc( LIBEVAL::CONTEXT* aCtx, void* self )
 
                 if( memoize )
                     board->m_EnclosedByAreaResultCache.Set( rkey, res );
+
+                // Reuse this segment result across all obstacle pairs in the router pass
+                if( cacheTransient )
+                    transientTrackCache.Set( transientKey, res );
 
                 return res ? 1.0 : 0.0;
             } );

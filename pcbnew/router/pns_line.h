@@ -238,7 +238,11 @@ public:
     void SetBlockingObstacle( ITEM* aObstacle ) { m_blockingObstacle = aObstacle; }
     ITEM* GetBlockingObstacle() const { return m_blockingObstacle; }
 
-    void DragSegment( const VECTOR2I& aP, int aIndex, bool aFreeAngle = false );
+    /**
+     * Drag a segment while optionally retaining collinear vertices used as rule boundaries.
+     */
+    void DragSegment( const VECTOR2I& aP, int aIndex, bool aFreeAngle = false,
+                      bool aPreserveCollinear = false );
     void DragCorner( const VECTOR2I& aP, int aIndex, bool aFreeAngle = false, DIRECTION_45 aPreferredEndingDirection = DIRECTION_45() );
 
     void DragArc( const VECTOR2I& aP, int aIndex );
@@ -266,7 +270,7 @@ public:
     SEGMENT* FindLinkContainingVertex( const VECTOR2I& aP ) const;
 
 private:
-    void dragSegment45( const VECTOR2I& aP, int aIndex );
+    void dragSegment45( const VECTOR2I& aP, int aIndex, bool aPreserveCollinear );
     void dragCorner45( const VECTOR2I& aP, int aIndex, DIRECTION_45 aPreferredEndingDirection );
     void dragSegmentFree( const VECTOR2I& aP, int aIndex );
     void dragCornerFree( const VECTOR2I& aP, int aIndex );

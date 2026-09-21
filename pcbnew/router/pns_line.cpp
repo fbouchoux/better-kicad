@@ -895,7 +895,8 @@ void LINE::DragCorner( const VECTOR2I& aP, int aIndex, bool aFreeAngle, DIRECTIO
     }
 }
 
-void LINE::DragSegment( const VECTOR2I& aP, int aIndex, bool aFreeAngle )
+void LINE::DragSegment( const VECTOR2I& aP, int aIndex, bool aFreeAngle,
+                        bool aPreserveCollinear )
 {
     if( aFreeAngle )
     {
@@ -903,7 +904,7 @@ void LINE::DragSegment( const VECTOR2I& aP, int aIndex, bool aFreeAngle )
     }
     else
     {
-        dragSegment45( aP, aIndex );
+        dragSegment45( aP, aIndex, aPreserveCollinear );
     }
 }
 
@@ -1227,7 +1228,7 @@ VECTOR2I LINE::snapToNeighbourSegments(
     return best;
 }
 
-void LINE::dragSegment45( const VECTOR2I& aP, int aIndex )
+void LINE::dragSegment45( const VECTOR2I& aP, int aIndex, bool aPreserveCollinear )
 {
     SHAPE_LINE_CHAIN path( m_line );
     VECTOR2I         target( aP );
@@ -1393,7 +1394,11 @@ void LINE::dragSegment45( const VECTOR2I& aP, int aIndex )
     else
         m_line.Replace( aIndex, aIndex + 1, best );
 
-    m_line.Simplify();
+    // Rule-area predicates can give adjacent collinear segments different constraints
+    if( aPreserveCollinear )
+        m_line.RemoveDuplicatePoints();
+    else
+        m_line.Simplify();
 }
 
 

@@ -150,6 +150,12 @@ private:
     ///< Returns true if the vertex at aVertexIndex has a non-obtuse corner
     bool pointHasBadCorner( const SHAPE_LINE_CHAIN& aLine, int aVertexIndex ) const;
 
+    /**
+     * Remove redundant collinear vertices unless adjacent segments resolve to different rules.
+     * Return true if at least one rule boundary remains.
+     */
+    bool simplifyRuleEquivalentCollinearSegments( LINE& aLine ) const;
+
 
     VIA_HANDLE             m_initialVia;
     VIA_HANDLE             m_draggedVia;

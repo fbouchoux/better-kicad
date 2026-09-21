@@ -145,6 +145,16 @@ public:
     virtual int Clearance( const ITEM* aA, const ITEM* aB, bool aUseClearanceEpsilon = true ) = 0;
     virtual bool HasUserDefinedPhysicalConstraint() { return false; }
 
+    /**
+     * Return true when custom rule results depend on item geometry.
+     */
+    virtual bool HasGeometryDependentRules() const { return false; }
+
+    /**
+     * Return true when two temporary track segments resolve to the same effective rules.
+     */
+    virtual bool HaveEquivalentRuleConstraints( const ITEM* aA, const ITEM* aB ) { return true; }
+
     virtual NET_HANDLE DpCoupledNet( NET_HANDLE aNet ) = 0;
     virtual int DpNetPolarity( NET_HANDLE aNet ) = 0;
     virtual bool DpNetPair( const ITEM* aItem, NET_HANDLE& aNetP, NET_HANDLE& aNetN ) = 0;

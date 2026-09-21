@@ -299,6 +299,9 @@ public:
                    bool aUseClearanceEpsilon = true ) override;
 
     bool HasUserDefinedPhysicalConstraint() override;
+    bool HasGeometryDependentRules() const override;
+    bool HaveEquivalentRuleConstraints( const PNS::ITEM* aA,
+                                        const PNS::ITEM* aB ) override;
 
     PNS::NET_HANDLE DpCoupledNet( PNS::NET_HANDLE aNet ) override;
     int DpNetPolarity( PNS::NET_HANDLE aNet ) override;
@@ -897,6 +900,60 @@ bool PNS_PCBNEW_RULE_RESOLVER::HasUserDefinedPhysicalConstraint()
     }
 
     return *m_hasUserPhysicalConstraint;
+}
+
+
+/**
+ * Report whether router geometry can change the result of a custom rule.
+ */
+bool PNS_PCBNEW_RULE_RESOLVER::HasGeometryDependentRules() const
+{
+    std::shared_ptr<DRC_ENGINE> drcEngine = m_board->GetDesignSettings().m_DRCEngine;
+    return drcEngine && drcEngine->HasGeometryDependentRules();
+}
+
+
+/**
+ * Compare the effective track constraints on two temporary segments.
+ */
+bool PNS_PCBNEW_RULE_RESOLVER::HaveEquivalentRuleConstraints( const PNS::ITEM* aA,
+                                                              const PNS::ITEM* aB )
+{
+    auto valuesEqual = []( const MINOPTMAX<int>& aLeft, const MINOPTMAX<int>& aRight )
+    {
+        return aLeft.HasMin() == aRight.HasMin()
+               && ( !aLeft.HasMin() || aLeft.Min() == aRight.Min() )
+               && aLeft.HasOpt() == aRight.HasOpt()
+               && ( !aLeft.HasOpt() || aLeft.Opt() == aRight.Opt() )
+               && aLeft.HasMax() == aRight.HasMax()
+               && ( !aLeft.HasMax() || aLeft.Max() == aRight.Max() );
+    };
+
+    int layer = aA->Layers().Start();
+
+    // Query each segment against itself so pair-based area conditions can match
+    for( PNS::CONSTRAINT_TYPE type : { PNS::CONSTRAINT_TYPE::CT_CLEARANCE,
+                                       PNS::CONSTRAINT_TYPE::CT_WIDTH,
+                                       PNS::CONSTRAINT_TYPE::CT_DIFF_PAIR_GAP,
+                                       PNS::CONSTRAINT_TYPE::CT_PHYSICAL_CLEARANCE } )
+    {
+        PNS::CONSTRAINT constraintA;
+        PNS::CONSTRAINT constraintB;
+        bool foundA = QueryConstraint( type, aA, aA, layer, &constraintA );
+        bool foundB = QueryConstraint( type, aB, aB, layer, &constraintB );
+
+        if( foundA != foundB )
+            return false;
+
+        if( foundA && ( constraintA.m_RuleName != constraintB.m_RuleName
+                        || !valuesEqual( constraintA.m_Value, constraintB.m_Value )
+                        || constraintA.m_IsTimeDomain != constraintB.m_IsTimeDomain ) )
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 
