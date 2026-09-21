@@ -262,6 +262,11 @@ public:
     bool GetNearestRatnestAnchor( VECTOR2I& aOtherEnd, PNS_LAYER_RANGE& aOtherEndLayers,
                                   ITEM*& aOtherEndItem );
 private:
+    /**
+     * Remove newly created or modified terminal segments shorter than 20% of their width.
+     */
+    void removeShortDanglingSegments( NODE* aNode );
+
     bool movePlacing( const VECTOR2I& aP, ITEM* aItem );
     bool moveDragging( const VECTOR2I& aP, ITEM* aItem );
 

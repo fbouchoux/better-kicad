@@ -20,6 +20,7 @@
  */
 
 #include <cstdio>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -864,6 +865,9 @@ void ROUTER::CommitRouting( NODE* aNode )
     if( m_state == ROUTE_TRACK && !m_placer->HasPlacedAnything() )
         return;
 
+    // Drop sub-width stubs before translating the PNS changes back to board items
+    removeShortDanglingSegments( aNode );
+
     NODE::ITEM_VECTOR removed;
     NODE::ITEM_VECTOR added;
     NODE::ITEM_VECTOR changed;
@@ -909,6 +913,47 @@ void ROUTER::CommitRouting( NODE* aNode )
 
     m_iface->Commit();
     m_world->Commit( aNode );
+}
+
+
+/**
+ * Remove newly created or modified terminal segments shorter than 20% of their width.
+ */
+void ROUTER::removeShortDanglingSegments( NODE* aNode )
+{
+    bool removedSegment;
+
+    // Repeat because removing an end stub can expose another short terminal segment
+    do
+    {
+        NODE::ITEM_VECTOR removed;
+        NODE::ITEM_VECTOR added;
+        aNode->GetUpdatedItems( removed, added );
+        removedSegment = false;
+
+        // Only inspect items affected by this operation so existing intentional geometry is preserved
+        for( ITEM* item : added )
+        {
+            if( !item->OfKind( ITEM::SEGMENT_T ) )
+                continue;
+
+            SEGMENT* segment = static_cast<SEGMENT*>( item );
+
+            if( static_cast<int64_t>( segment->Seg().Length() ) * 5 >= segment->Width() )
+                continue;
+
+            const JOINT* start = aNode->FindJoint( segment->Anchor( 0 ), segment );
+            const JOINT* end = aNode->FindJoint( segment->Anchor( 1 ), segment );
+
+            // A trivial endpoint has no pad, via, arc, or other track attached to it
+            if( ( start && start->IsTrivialEndpoint() ) || ( end && end->IsTrivialEndpoint() ) )
+            {
+                aNode->Remove( segment );
+                removedSegment = true;
+                break;
+            }
+        }
+    } while( removedSegment );
 }
 
 

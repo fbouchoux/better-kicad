@@ -336,6 +336,7 @@ public:
     void HideItem( PNS::ITEM* aItem ) override {};
     void DisplayItem( const PNS::ITEM* aItem, int aClearance, bool aEdit = false,
                       int aFlags = 0 ) override {};
+    void SyncWorld( PNS::NODE* aWorld ) override {};
     PNS::RULE_RESOLVER* GetRuleResolver() override;
 
     bool TestInheritTrackWidth( PNS::ITEM* aItem, int* aInheritedWidth,
@@ -379,6 +380,54 @@ struct PNS_TEST_FIXTURE
 PNS::RULE_RESOLVER* MOCK_PNS_KICAD_IFACE::GetRuleResolver()
 {
     return &m_testFixture->m_ruleResolver;
+}
+
+
+// Router commits remove only sub-width terminal stubs created by the current operation
+BOOST_FIXTURE_TEST_CASE( PNSCommitRemovesShortDanglingSegments, PNS_TEST_FIXTURE )
+{
+    m_router->SyncWorld();
+
+    PNS::NODE* world = m_router->GetWorld();
+    PNS::NODE* branch = world->Branch();
+    PNS::NET_HANDLE net = reinterpret_cast<PNS::NET_HANDLE>( 1 );
+
+    auto addSegment =
+            [&]( const VECTOR2I& aStart, const VECTOR2I& aEnd )
+            {
+                std::unique_ptr<PNS::SEGMENT> segment =
+                        std::make_unique<PNS::SEGMENT>( SEG( aStart, aEnd ), net );
+                segment->SetWidth( 1000 );
+                segment->SetLayers( PNS_LAYER_RANGE( F_Cu ) );
+                BOOST_REQUIRE( branch->Add( std::move( segment ) ) );
+            };
+
+    // The first line ends in a 199 IU stub, just below 20% of its 1000 IU width
+    addSegment( VECTOR2I( 0, 0 ), VECTOR2I( 1000, 0 ) );
+    addSegment( VECTOR2I( 1000, 0 ), VECTOR2I( 1199, 0 ) );
+
+    // The second line ends at exactly 20%, which must not be removed
+    addSegment( VECTOR2I( 0, 2000 ), VECTOR2I( 1000, 2000 ) );
+    addSegment( VECTOR2I( 1000, 2000 ), VECTOR2I( 1200, 2000 ) );
+
+    // A sub-width segment ending at a via is connected geometry and must also be preserved
+    addSegment( VECTOR2I( 0, 4000 ), VECTOR2I( 1000, 4000 ) );
+    addSegment( VECTOR2I( 1000, 4000 ), VECTOR2I( 1199, 4000 ) );
+
+    std::unique_ptr<PNS::VIA> via = std::make_unique<PNS::VIA>(
+            VECTOR2I( 1199, 4000 ), PNS_LAYER_RANGE( F_Cu, B_Cu ), 600, 300 );
+    via->SetNet( net );
+    branch->Add( std::move( via ) );
+
+    m_router->CommitRouting( branch );
+
+    std::set<PNS::ITEM*> segments;
+    world->AllItemsInNet( net, segments, PNS::ITEM::SEGMENT_T );
+
+    BOOST_CHECK_EQUAL( segments.size(), 5 );
+    BOOST_CHECK( world->FindJoint( VECTOR2I( 1199, 0 ), F_Cu, net ) == nullptr );
+    BOOST_CHECK( world->FindJoint( VECTOR2I( 1200, 2000 ), F_Cu, net ) != nullptr );
+    BOOST_CHECK( world->FindJoint( VECTOR2I( 1199, 4000 ), F_Cu, net ) != nullptr );
 }
 
 
