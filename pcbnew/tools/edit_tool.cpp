@@ -134,6 +134,50 @@ static const std::vector<KICAD_T> connectedTypes = { PCB_TRACE_T, PCB_ARC_T, PCB
 static const std::vector<KICAD_T> routableTypes = { PCB_TRACE_T, PCB_ARC_T, PCB_VIA_T, PCB_PAD_T, PCB_FOOTPRINT_T };
 
 
+static bool canMoveToLayer( const EDA_ITEM* aItem )
+{
+    switch( aItem->Type() )
+    {
+    case PCB_SHAPE_T:
+    case PCB_REFERENCE_IMAGE_T:
+    case PCB_FIELD_T:
+    case PCB_TEXT_T:
+    case PCB_TEXTBOX_T:
+    case PCB_BARCODE_T:
+    case PCB_TABLE_T:
+    case PCB_DRILL_CHART_T:
+    case PCB_TRACE_T:
+    case PCB_ARC_T:
+    case PCB_DIMENSION_T:
+    case PCB_DIM_ALIGNED_T:
+    case PCB_DIM_LEADER_T:
+    case PCB_DIM_CENTER_T:
+    case PCB_DIM_RADIAL_T:
+    case PCB_DIM_ORTHOGONAL_T:
+    case PCB_TARGET_T:
+        return true;
+
+    default:
+        return false;
+    }
+}
+
+
+static bool selectionCanMoveToLayer( const SELECTION& aSelection )
+{
+    if( aSelection.Empty() )
+        return false;
+
+    for( const EDA_ITEM* item : aSelection )
+    {
+        if( !canMoveToLayer( item ) )
+            return false;
+    }
+
+    return true;
+}
+
+
 // Types with no Mirror() override, which would fall through to the warning-dialog
 // BOARD_ITEM::Mirror. Free pads are handled specially by the tool but not by PCB_GROUP::Mirror.
 static const std::vector<KICAD_T> nonMirrorableTypes = {
@@ -613,6 +657,91 @@ static std::shared_ptr<ACTION_MENU> makeGateSwapMenu( TOOL_INTERACTIVE* aTool )
 };
 
 
+class MOVE_TO_LAYER_MENU : public ACTION_MENU
+{
+public:
+    MOVE_TO_LAYER_MENU() : ACTION_MENU( true )
+    {
+        SetTitle( _( "Move to Layer" ) );
+        SetIcon( BITMAPS::swap_layer );
+    }
+
+protected:
+    ACTION_MENU* create() const override { return new MOVE_TO_LAYER_MENU(); }
+
+    void update() override
+    {
+        Clear();
+
+        TOOL_MANAGER* toolMgr = getToolManager();
+
+        if( !toolMgr )
+            return;
+
+        PCB_SELECTION_TOOL* selectionTool = toolMgr->GetTool<PCB_SELECTION_TOOL>();
+        PCB_BASE_EDIT_FRAME* frame = dynamic_cast<PCB_BASE_EDIT_FRAME*>( toolMgr->GetToolHolder() );
+
+        if( !selectionTool || !frame || !frame->GetBoard() )
+            return;
+
+        const SELECTION& selection = selectionTool->GetSelection();
+
+        if( !selectionCanMoveToLayer( selection ) )
+            return;
+
+        LSET layers = frame->GetBoard()->GetEnabledLayers();
+
+        for( const EDA_ITEM* item : selection )
+        {
+            if( item->IsType( { PCB_TRACE_T, PCB_ARC_T } ) )
+                layers &= LSET::AllCuMask();
+        }
+
+        PCB_LAYER_ID commonLayer = static_cast<const BOARD_ITEM*>( selection.Front() )->GetLayer();
+
+        for( const EDA_ITEM* item : selection )
+        {
+            if( static_cast<const BOARD_ITEM*>( item )->GetLayer() != commonLayer )
+            {
+                commonLayer = UNDEFINED_LAYER;
+                break;
+            }
+        }
+
+        for( PCB_LAYER_ID layer : layers.UIOrder() )
+        {
+            int         id = ID_POPUP_PCB_MOVE_TO_LAYER_BASE + static_cast<int>( layer );
+            wxMenuItem* item = AppendRadioItem( id, frame->GetBoard()->GetLayerName( layer ) );
+
+            if( layer == commonLayer )
+                item->Check();
+        }
+    }
+
+    OPT_TOOL_EVENT eventHandler( const wxMenuEvent& aEvent ) override
+    {
+        int id = aEvent.GetId();
+
+        if( id >= ID_POPUP_PCB_MOVE_TO_LAYER_BASE && id <= ID_POPUP_PCB_MOVE_TO_LAYER_LAST )
+        {
+            TOOL_EVENT event = PCB_ACTIONS::moveToLayer.MakeEvent();
+            event.SetParameter( static_cast<PCB_LAYER_ID>( id - ID_POPUP_PCB_MOVE_TO_LAYER_BASE ) );
+            return event;
+        }
+
+        return OPT_TOOL_EVENT();
+    }
+};
+
+
+static std::shared_ptr<ACTION_MENU> makeMoveToLayerMenu( TOOL_INTERACTIVE* aTool )
+{
+    std::shared_ptr<MOVE_TO_LAYER_MENU> menu = std::make_shared<MOVE_TO_LAYER_MENU>();
+    menu->SetTool( aTool );
+    return menu;
+}
+
+
 bool EDIT_TOOL::Init()
 {
     // Find the selection tool, so they can cooperate
@@ -632,6 +761,9 @@ bool EDIT_TOOL::Init()
 
     std::shared_ptr<ACTION_MENU> gateSwapSubMenu = makeGateSwapMenu( this );
     m_selectionTool->GetToolMenu().RegisterSubMenu( gateSwapSubMenu );
+
+    std::shared_ptr<ACTION_MENU> moveToLayerSubMenu = makeMoveToLayerMenu( this );
+    m_selectionTool->GetToolMenu().RegisterSubMenu( moveToLayerSubMenu );
 
     std::shared_ptr<CONDITIONAL_MENU> fpAttributesMenu = std::make_shared<CONDITIONAL_MENU>( this );
     fpAttributesMenu->SetUntranslatedTitle( _HKI( "Attributes" ) );
@@ -898,6 +1030,7 @@ bool EDIT_TOOL::Init()
                                                       && SELECTION_CONDITIONS::OnlyTypes( GENERAL_COLLECTOR::DraggableItems )
                                                       && !SELECTION_CONDITIONS::OnlyTypes( footprintTypes ) );
     menu.AddItem( PCB_ACTIONS::flip,              SELECTION_CONDITIONS::NotEmpty );
+    menu.AddMenu( moveToLayerSubMenu.get(),       selectionCanMoveToLayer && notMovingCondition );
 
     menu.AddItem( PCB_ACTIONS::swap,              SELECTION_CONDITIONS::MoreThan( 1 ) );
     menu.AddItem( PCB_ACTIONS::swapPadNets,       SELECTION_CONDITIONS::MoreThan( 1 )
@@ -1403,6 +1536,60 @@ int EDIT_TOOL::ChangeTrackLayer( const TOOL_EVENT& aEvent )
         m_toolMgr->ProcessEvent( EVENTS::SelectedItemsModified );
     }
 
+    return 0;
+}
+
+
+int EDIT_TOOL::MoveToLayer( const TOOL_EVENT& aEvent )
+{
+    if( isRouterActive() )
+    {
+        wxBell();
+        return 0;
+    }
+
+    PCB_LAYER_ID targetLayer = aEvent.Parameter<PCB_LAYER_ID>();
+    BOARD*       currentBoard = board();
+
+    if( !currentBoard || targetLayer < 0 || targetLayer >= PCB_LAYER_ID_COUNT
+            || !currentBoard->IsLayerEnabled( targetLayer ) )
+    {
+        return 0;
+    }
+
+    PCB_SELECTION& selection = m_selectionTool->GetSelection();
+
+    if( !selectionCanMoveToLayer( selection ) )
+        return 0;
+
+    if( !IsCopperLayer( targetLayer )
+            && ( selection.HasType( PCB_TRACE_T ) || selection.HasType( PCB_ARC_T ) ) )
+    {
+        return 0;
+    }
+
+    BOARD_COMMIT commit( this );
+
+    for( EDA_ITEM* item : selection )
+    {
+        BOARD_ITEM* boardItem = static_cast<BOARD_ITEM*>( item );
+
+        if( boardItem->GetLayer() == targetLayer )
+            continue;
+
+        commit.Modify( boardItem, nullptr, RECURSE_MODE::RECURSE );
+        boardItem->SetLayer( targetLayer );
+    }
+
+    if( commit.Empty() )
+        return 0;
+
+    commit.Push( _( "Move to Layer" ) );
+
+    if( selection.IsHover() )
+        m_toolMgr->RunAction( ACTIONS::selectionClear );
+
+    m_toolMgr->ProcessEvent( EVENTS::SelectedItemsModified );
     return 0;
 }
 
@@ -4085,6 +4272,7 @@ void EDIT_TOOL::setTransitions()
     Go( &EDIT_TOOL::Mirror,                   PCB_ACTIONS::mirrorH.MakeEvent() );
     Go( &EDIT_TOOL::Mirror,                   PCB_ACTIONS::mirrorV.MakeEvent() );
     Go( &EDIT_TOOL::Swap,                     PCB_ACTIONS::swap.MakeEvent() );
+    Go( &EDIT_TOOL::MoveToLayer,              PCB_ACTIONS::moveToLayer.MakeEvent() );
     Go( &EDIT_TOOL::SwapPadNets,              PCB_ACTIONS::swapPadNets.MakeEvent() );
     Go( &EDIT_TOOL::SwapGateNets,             PCB_ACTIONS::swapGateNets.MakeEvent() );
     Go( &EDIT_TOOL::PackAndMoveFootprints,    PCB_ACTIONS::packAndMoveFootprints.MakeEvent() );

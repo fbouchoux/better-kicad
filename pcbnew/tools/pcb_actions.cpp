@@ -1007,6 +1007,14 @@ TOOL_ACTION PCB_ACTIONS::swap( TOOL_ACTION_ARGS()
         .Tooltip( _( "Swap positions of selected items" ) )
         .Icon( BITMAPS::swap ) );
 
+TOOL_ACTION PCB_ACTIONS::moveToLayer( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveEdit.moveToLayer" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Move to Layer" ) )
+        .Tooltip( _( "Move selected item(s) to a specific layer" ) )
+        .Parameter( UNDEFINED_LAYER )
+        .Icon( BITMAPS::swap_layer ) );
+
 TOOL_ACTION PCB_ACTIONS::swapPadNets( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveEdit.swapPadNets" )
         .Scope( AS_GLOBAL )

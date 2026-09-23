@@ -2,6 +2,7 @@
 #define PCBNEW_ID_H_
 
 #include <id.h>
+#include <layer_ids.h>
 
 /**
  * Command IDs for the printed circuit board editor.
@@ -58,6 +59,9 @@ enum pcbnew_ids
     // Dynamic gate swap submenu entries (index offset added to base)
     ID_POPUP_PCB_SWAP_UNIT_BASE,
     ID_POPUP_PCB_SWAP_UNIT_LAST = ID_POPUP_PCB_SWAP_UNIT_BASE + 63,
+    // Dynamic move-to-layer submenu entries (PCB_LAYER_ID offset added to base)
+    ID_POPUP_PCB_MOVE_TO_LAYER_BASE,
+    ID_POPUP_PCB_MOVE_TO_LAYER_LAST = ID_POPUP_PCB_MOVE_TO_LAYER_BASE + PCB_LAYER_ID_COUNT - 1,
     ID_POPUP_PCB_SELECT_CUSTOM_DIFFPAIR,
     ID_POPUP_PCB_SELECT_USE_NETCLASS_DIFFPAIR,
     ID_POPUP_PCB_SELECT_DIFFPAIR1,
