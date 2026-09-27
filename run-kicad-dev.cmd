@@ -1,85 +1,111 @@
 @echo off
 setlocal
 
-rem ============================================================
-rem KiCad development launcher - Windows / RelWithDebInfo
-rem
-rem Put this file in the KiCad source root, next to CMakeLists.txt:
-rem   C:\workspace\kicad\kicad-master\run-kicad-dev.cmd
-rem ============================================================
+rem Keep all editable paths together so the runtime layout is easy to audit
+set "KICAD_SOURCE_ROOT=%~dp0"
+set "KICAD_BUILD_ROOT=%KICAD_SOURCE_ROOT%build\msvc-win64-relwithdebinfo"
+set "KICAD_VCPKG_ROOT=%KICAD_BUILD_ROOT%\vcpkg_installed\x64-windows"
+set "KICAD_RELEASE_ROOT=%ProgramFiles%\KiCad\10.0"
+set "KICAD_RELEASE_DATA=%KICAD_RELEASE_ROOT%\share\kicad"
+set "KICAD_EXE=%KICAD_BUILD_ROOT%\kicad\kicad.exe"
 
-set "SOURCE_ROOT=%~dp0"
-set "BUILD_ROOT=%SOURCE_ROOT%build\msvc-win64-relwithdebinfo"
-set "VCPKG_INSTALLED=%BUILD_ROOT%\vcpkg_installed\x64-windows"
-set "KICAD_EXE=%BUILD_ROOT%\kicad\kicad.exe"
+rem Save launcher options before subroutine calls replace the active batch arguments
+if /i "%~1"=="--check" set "KICAD_CHECK_ONLY=1"
 
-if not exist "%KICAD_EXE%" (
+rem Refuse to start when a partial build could make Windows find a release KiCad DLL
+for %%F in (
+    "%KICAD_EXE%"
+    "%KICAD_BUILD_ROOT%\common\kicommon.dll"
+    "%KICAD_BUILD_ROOT%\api\kiapi.dll"
+    "%KICAD_BUILD_ROOT%\common\gal\kigal.dll"
+    "%KICAD_BUILD_ROOT%\eeschema\_eeschema.dll"
+    "%KICAD_BUILD_ROOT%\pcbnew\_pcbnew.dll"
+    "%KICAD_BUILD_ROOT%\gerbview\_gerbview.dll"
+    "%KICAD_BUILD_ROOT%\cvpcb\_cvpcb.dll"
+    "%KICAD_BUILD_ROOT%\pagelayout_editor\_pl_editor.dll"
+    "%KICAD_BUILD_ROOT%\pcb_calculator\_pcb_calculator.dll"
+    "%KICAD_BUILD_ROOT%\3d-viewer\3d_cache\sg\kicad_3dsg.dll"
+    "%KICAD_BUILD_ROOT%\plugins\3d\idf\s3d_plugin_idf.dll"
+    "%KICAD_BUILD_ROOT%\plugins\3d\oce\s3d_plugin_oce.dll"
+    "%KICAD_BUILD_ROOT%\plugins\3d\vrml\s3d_plugin_vrml.dll"
+    "%KICAD_BUILD_ROOT%\resources\images.tar.gz"
+    "%KICAD_VCPKG_ROOT%\tools\python3\python.exe"
+) do if not exist "%%~F" (
     echo.
-    echo ERROR: kicad.exe was not found:
-    echo   "%KICAD_EXE%"
-    echo.
-    echo Build the complete KiCad project first ^(Build All in Visual Studio^).
-    echo.
-    pause
+    echo ERROR: Missing development runtime file
+    echo   %%~F
     exit /b 1
 )
 
-if not exist "%VCPKG_INSTALLED%\bin" (
+rem Use the release installation only for stock data that is not built in this tree
+for %%D in (
+    "%KICAD_BUILD_ROOT%\schemas"
+    "%KICAD_VCPKG_ROOT%\bin"
+    "%KICAD_RELEASE_DATA%\symbols"
+    "%KICAD_RELEASE_DATA%\footprints"
+    "%KICAD_RELEASE_DATA%\3dmodels"
+    "%KICAD_RELEASE_DATA%\template"
+    "%KICAD_RELEASE_DATA%\scripting"
+    "%KICAD_RELEASE_ROOT%\etc\fonts"
+) do if not exist "%%~D\" (
     echo.
-    echo ERROR: vcpkg runtime directory was not found:
-    echo   "%VCPKG_INSTALLED%\bin"
-    echo.
-    echo Reconfigure/build KiCad before launching it.
-    echo.
-    pause
+    echo ERROR: Missing runtime directory
+    echo   %%~D
     exit /b 1
 )
 
-if not exist "%VCPKG_INSTALLED%\tools\python3" (
-    echo.
-    echo ERROR: the vcpkg Python runtime was not found:
-    echo   "%VCPKG_INSTALLED%\tools\python3"
-    echo.
-    pause
-    exit /b 1
-)
-
-if not exist "%BUILD_ROOT%\resources\images.tar.gz" (
-    echo.
-    echo ERROR: KiCad build resources are incomplete:
-    echo   "%BUILD_ROOT%\resources\images.tar.gz"
-    echo.
-    echo Run Build All once in Visual Studio.
-    echo.
-    pause
-    exit /b 1
-)
-
-if not exist "%BUILD_ROOT%\schemas" (
-    echo.
-    echo WARNING: schema directory was not found:
-    echo   "%BUILD_ROOT%\schemas"
-    echo.
-    echo KiCad will still be started. If it reports missing schema files,
-    echo rebuild the api_schema_build_copy target or run Build All.
-    echo.
-)
-
+rem Tell KiCad to resolve code, plugins, schemas and images from the build tree
 set "KICAD_RUN_FROM_BUILD_DIR=1"
+
+rem Use the Python interpreter and extension module built by this configuration
 set "KICAD_USE_EXTERNAL_PYTHONHOME=1"
-set "PYTHONHOME=%VCPKG_INSTALLED%\tools\python3"
-set "PYTHONPATH=%BUILD_ROOT%\pcbnew;%SOURCE_ROOT%scripting"
-set "PATH=%VCPKG_INSTALLED%\bin;%BUILD_ROOT%\common;%BUILD_ROOT%\api;%BUILD_ROOT%\common\gal;%PATH%"
-set "KICAD10_SYMBOL_DIR=C:\Program Files\KiCad\10.0\share\kicad\symbols"
-set "KICAD10_FOOTPRINT_DIR=C:\Program Files\KiCad\10.0\share\kicad\footprints"
-set "KICAD10_3DMODEL_DIR=C:\Program Files\KiCad\10.0\share\kicad\3dmodels"
-set "KICAD10_TEMPLATE_DIR=C:\Program Files\KiCad\10.0\share\kicad\template"
+set "PYTHONHOME=%KICAD_VCPKG_ROOT%\tools\python3"
+set "PYTHONPATH=%KICAD_BUILD_ROOT%\pcbnew;%KICAD_SOURCE_ROOT%scripting"
 
-echo Starting KiCad development build...
-echo   %KICAD_EXE%
+rem Point stock libraries and non-code support data at the matching installed release
+set "KICAD_STOCK_DATA_HOME=%KICAD_RELEASE_DATA%"
+set "KICAD10_SYMBOL_DIR=%KICAD_RELEASE_DATA%\symbols"
+set "KICAD10_FOOTPRINT_DIR=%KICAD_RELEASE_DATA%\footprints"
+set "KICAD10_3DMODEL_DIR=%KICAD_RELEASE_DATA%\3dmodels"
+set "KICAD10_TEMPLATE_DIR=%KICAD_RELEASE_DATA%\template"
+set "KICAD10_SCRIPTING_DIR=%KICAD_RELEASE_DATA%\scripting"
+set "FONTCONFIG_PATH=%KICAD_RELEASE_ROOT%\etc\fonts"
+
+rem Isolate DLL lookup from the machine PATH so installed KiCad binaries cannot be loaded
+set "PATH=%KICAD_BUILD_ROOT%\kicad;%KICAD_BUILD_ROOT%\common;%KICAD_BUILD_ROOT%\api;%KICAD_BUILD_ROOT%\common\gal;%KICAD_BUILD_ROOT%\pcbnew;%KICAD_BUILD_ROOT%\eeschema;%KICAD_BUILD_ROOT%\gerbview;%KICAD_BUILD_ROOT%\cvpcb;%KICAD_BUILD_ROOT%\pagelayout_editor;%KICAD_BUILD_ROOT%\bitmap2component;%KICAD_BUILD_ROOT%\pcb_calculator;%KICAD_BUILD_ROOT%\3d-viewer\3d_cache\sg;%KICAD_BUILD_ROOT%\plugins\3d\idf;%KICAD_BUILD_ROOT%\plugins\3d\oce;%KICAD_BUILD_ROOT%\plugins\3d\vrml;%KICAD_VCPKG_ROOT%\bin;%PYTHONHOME%;%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\Wbem;%SystemRoot%\System32\WindowsPowerShell\v1.0"
+
+rem Print the effective split between development binaries and installed stock data
+echo KiCad development startup paths
+echo   Source tree:       %KICAD_SOURCE_ROOT%
+echo   Build tree:        %KICAD_BUILD_ROOT%
+echo   Executable:        %KICAD_EXE%
+echo   Build DLLs:        build module directories and %KICAD_VCPKG_ROOT%\bin
+echo   Build resources:   %KICAD_BUILD_ROOT%\resources
+echo   Build schemas:     %KICAD_BUILD_ROOT%\schemas
+echo   Build Python:      %PYTHONHOME%
+echo   Release data root: %KICAD_RELEASE_DATA%
+echo   Symbols:           %KICAD10_SYMBOL_DIR%
+echo   Footprints:        %KICAD10_FOOTPRINT_DIR%
+echo   3D models:         %KICAD10_3DMODEL_DIR%
+echo   Templates:         %KICAD10_TEMPLATE_DIR%
+echo   Scripting data:    %KICAD10_SCRIPTING_DIR%
+echo   Fontconfig:        %FONTCONFIG_PATH%
+echo   Machine PATH:      intentionally excluded from DLL lookup
+
+if defined KICAD_CHECK_ONLY (
+    echo.
+    echo Startup environment check passed
+    exit /b 0
+)
+
+rem Keep the process attached so crashes and the real exit code remain visible
 echo.
+echo Starting KiCad development build
+pushd "%KICAD_BUILD_ROOT%\kicad"
+"%KICAD_EXE%" %*
+set "KICAD_EXIT_CODE=%ERRORLEVEL%"
+popd
 
-start "KiCad Dev" /D "%BUILD_ROOT%" "%KICAD_EXE%" %*
-
-endlocal
-exit /b 0
+echo.
+echo KiCad exited with code %KICAD_EXIT_CODE%
+exit /b %KICAD_EXIT_CODE%
