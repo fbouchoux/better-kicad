@@ -654,6 +654,7 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
         case LAYER_DRC_ERROR:
         case LAYER_DRC_WARNING:
         case LAYER_DRC_EXCLUSION:
+        case LAYER_LIVE_DRC:
             isActive = true;
             break;
 
@@ -4102,8 +4103,8 @@ void PCB_PAINTER::draw( const PCB_MARKER* aMarker, int aLayer )
     if( aMarker->GetBoard() && !aMarker->GetBoard()->IsElementVisible( aMarker->GetColorLayer() ) )
         return;
 
-    // The active marker is redrawn on LAYER_DRC_HIGHLIGHTED so it lands on top of any
-    // neighbouring inactive markers
+    // The active manual marker is redrawn on LAYER_DRC_HIGHLIGHTED so it lands on top of any
+    // neighbouring inactive markers.
     if( aLayer == LAYER_DRC_HIGHLIGHTED && !aMarker->IsBrightened() && !aMarker->IsSelected() )
         return;
 
@@ -4113,42 +4114,87 @@ void PCB_PAINTER::draw( const PCB_MARKER* aMarker, int aLayer )
     SHAPE_LINE_CHAIN polygon;
 
     aMarker->SetZoom( 1.0 / sqrt( m_gal->GetZoomFactor() ) );
-    aMarker->ShapeToPolygon( polygon );
 
-    m_gal->Save();
-    m_gal->Translate( aMarker->GetPosition() );
-
-    m_gal->SetStrokeColor( shadowColor );
-    m_gal->SetFillColor( color );
-
-    if( isShadow )
+    // Live violations use their geometry and endpoint rings directly.  The regular marker glyph
+    // is arrow-shaped and obscures the exact location it is meant to call out.
+    if( !aMarker->IsOnline() )
     {
-        m_gal->SetIsFill( false );
-        m_gal->SetIsStroke( true );
-        m_gal->SetLineWidth( (float) aMarker->MarkerScale() );
-    }
-    else
-    {
-        m_gal->SetIsFill( true );
-        m_gal->SetIsStroke( false );
-    }
+        aMarker->ShapeToPolygon( polygon );
 
-    m_gal->DrawPolygon( polygon );
-    m_gal->Restore();
+        m_gal->Save();
+        m_gal->Translate( aMarker->GetPosition() );
+
+        m_gal->SetStrokeColor( shadowColor );
+        m_gal->SetFillColor( color );
+
+        if( isShadow )
+        {
+            m_gal->SetIsFill( false );
+            m_gal->SetIsStroke( true );
+            m_gal->SetLineWidth( (float) aMarker->MarkerScale() );
+        }
+        else
+        {
+            m_gal->SetIsFill( true );
+            m_gal->SetIsStroke( false );
+        }
+
+        m_gal->DrawPolygon( polygon );
+        m_gal->Restore();
+    }
 
     // Draw the error legend shapes.
-    if( aLayer == LAYER_DRC_HIGHLIGHTED )
+    if( aLayer == LAYER_DRC_HIGHLIGHTED || aLayer == LAYER_LIVE_DRC )
     {
         COLOR4D legendColor = m_pcbSettings.m_backgroundColor;
         double  bg_h, bg_s, bg_l;
         COLOR4D haloColor;
 
-        legendColor.ToHSL( bg_h, bg_s, bg_l );
-        haloColor.FromHSL( bg_h, bg_s, bg_l < 0.5 ? 1.0 : 0.0 );
+        if( aMarker->IsOnline() )
+        {
+            legendColor = color;
+            haloColor = color;
+        }
+        else
+        {
+            legendColor.ToHSL( bg_h, bg_s, bg_l );
+            haloColor.FromHSL( bg_h, bg_s, bg_l < 0.5 ? 1.0 : 0.0 );
+        }
 
         m_gal->SetLineWidth( (float) aMarker->MarkerScale() / 3.0f );
         m_gal->SetStrokeColor( legendColor.WithAlpha( 1.0 ) );
         m_gal->SetFillColor( haloColor.WithAlpha( 0.5 ) );
+
+        if( aMarker->IsOnline() && !aMarker->GetItemHighlights().empty() )
+        {
+            m_gal->SetFillColor( color );
+            m_gal->SetStrokeColor( color );
+            m_gal->SetIsFill( true );
+            m_gal->SetIsStroke( false );
+
+            for( const PCB_SHAPE& shape : aMarker->GetItemHighlights() )
+            {
+                if( shape.GetShape() == SHAPE_T::SEGMENT )
+                {
+                    m_gal->DrawSegment( shape.GetStart(), shape.GetEnd(), shape.GetWidth() );
+                }
+                else if( shape.GetShape() == SHAPE_T::ARC )
+                {
+                    EDA_ANGLE startAngle, endAngle;
+                    shape.CalcArcAngles( startAngle, endAngle );
+                    m_gal->DrawArcSegment( shape.GetCenter(), shape.GetRadius(), startAngle,
+                                           shape.GetArcAngle(), shape.GetWidth(), ARC_HIGH_DEF );
+                }
+                else if( shape.GetShape() == SHAPE_T::CIRCLE )
+                {
+                    m_gal->DrawCircle( shape.GetCenter(), shape.GetRadius() );
+                }
+            }
+
+            m_gal->SetLineWidth( (float) aMarker->MarkerScale() / 3.0f );
+            m_gal->SetStrokeColor( legendColor.WithAlpha( 1.0 ) );
+            m_gal->SetFillColor( haloColor.WithAlpha( 0.5 ) );
+        }
 
         for( const PCB_SHAPE& shape : aMarker->GetErrorLegendShapes() )
         {
@@ -4168,6 +4214,10 @@ void PCB_PAINTER::draw( const PCB_MARKER* aMarker, int aLayer )
 
                     m_gal->DrawArc( shape.GetCenter(), shape.GetRadius(), startAngle, shape.GetArcAngle() );
                 }
+                else if( shape.GetShape() == SHAPE_T::CIRCLE )
+                {
+                    m_gal->DrawCircle( shape.GetCenter(), shape.GetRadius() );
+                }
             }
             else    // Item is a highlight halo
             {
@@ -4185,6 +4235,10 @@ void PCB_PAINTER::draw( const PCB_MARKER* aMarker, int aLayer )
 
                     m_gal->DrawArcSegment( shape.GetCenter(), shape.GetRadius(), startAngle, shape.GetArcAngle(),
                                            shape.GetWidth(), ARC_HIGH_DEF );
+                }
+                else if( shape.GetShape() == SHAPE_T::CIRCLE )
+                {
+                    m_gal->DrawCircle( shape.GetCenter(), shape.GetRadius() );
                 }
             }
         }

@@ -805,6 +805,7 @@ GAL_SET GAL_SET::DefaultVisible()
         LAYER_VIA_HOLEWALLS,
         LAYER_DRC_ERROR,
         LAYER_DRC_WARNING,
+        LAYER_LIVE_DRC,
         // LAYER_DRC_EXCLUSION,      // DRC exclusions hidden by default
         LAYER_DRAWINGSHEET,
         LAYER_GP_OVERLAY,

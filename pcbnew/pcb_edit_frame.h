@@ -64,6 +64,7 @@ class DIALOG_BOARD_SETUP;
 class DIALOG_FOOTPRINT_FIELDS_TABLE;
 class PCB_DESIGN_BLOCK_PANE;
 class PANEL_CONSTRAINTS;
+class PANEL_ONLINE_DRC;
 class WX_INFOBAR;
 
 class KICAD_API_SERVER;
@@ -125,12 +126,15 @@ public:
      */
     static const wxString SearchPaneName() { return wxT( "Search" ); }
     static const wxString ConstraintsPaneName() { return wxT( "Constraints" ); }
+    static const wxString OnlineDRCPaneName() { return wxT( "OnlineDRC" ); }
 
     /// Show/hide the dockable geometric-constraint list pane, refreshing it when shown (#2329).
     void ToggleConstraintsPanel();
 
     /// The dockable geometric-constraint list pane (#2329), or nullptr.
     PANEL_CONSTRAINTS* GetConstraintsPanel() const { return m_constraintsPanel; }
+
+    PANEL_ONLINE_DRC* GetOnlineDRCPanel() const { return m_onlineDRCPanel; }
 
     /**
      * Show the Find dialog.
@@ -900,6 +904,7 @@ private:
     PCB_DESIGN_BLOCK_PANE* m_designBlocksPane;
     // Tool Reset() reads this before the ctor creates the panel.
     PANEL_CONSTRAINTS* m_constraintsPanel = nullptr; ///< Dockable geometric-constraint list (#2329).
+    PANEL_ONLINE_DRC*  m_onlineDRCPanel = nullptr;
 
     /// Secondary infobar that stacks above the main one; reserved for load-time
     /// notices (currently the WRL -> STEP migration prompt) that must not be

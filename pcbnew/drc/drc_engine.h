@@ -22,8 +22,9 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <vector>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <kiid.h>
 #include <layer_ids.h>
@@ -68,6 +69,7 @@ class BOARD_COMMIT;
 class BOARD_DESIGN_SETTINGS;
 class DRC_TEST_PROVIDER;
 class DRC_TEST_PROVIDER_CREEPAGE;
+class TUNING_PROFILES;
 class PCB_EDIT_FRAME;
 class DS_PROXY_VIEW_ITEM;
 class BOARD_ITEM;
@@ -176,6 +178,14 @@ public:
      */
     void SetProgressReporter( PROGRESS_REPORTER* aProgRep ) { m_progressReporter = aProgRep; }
     PROGRESS_REPORTER* GetProgressReporter() const { return m_progressReporter; }
+
+    /// Supply an isolated project-settings snapshot when the board is detached from its project.
+    void SetTuningProfiles( std::shared_ptr<TUNING_PROFILES> aProfiles )
+    {
+        m_tuningProfiles = std::move( aProfiles );
+    }
+
+    std::shared_ptr<TUNING_PROFILES> GetTuningProfiles() const { return m_tuningProfiles; }
 
     /*
      * Set an optional reporter for rule parse/compile/run-time errors and log-level progress
@@ -298,7 +308,7 @@ public:
     bool HasUserDefinedPhysicalConstraint();
     std::set<int> QueryDistinctConstraints( DRC_CONSTRAINT_T aConstraintId );
 
-    std::vector<DRC_TEST_PROVIDER*> GetTestProviders() const { return m_testProviders; };
+    std::vector<DRC_TEST_PROVIDER*> GetTestProviders() const;
 
     DRC_TEST_PROVIDER* GetTestProvider( const wxString& name ) const;
 
@@ -367,14 +377,15 @@ private:
     std::shared_ptr<DRC_RULE> createImplicitRule( const wxString& name, DRC_IMPLICIT_SOURCE aImplicitSource );
 
 protected:
-    BOARD_DESIGN_SETTINGS*     m_designSettings;
-    BOARD*                     m_board;
-    DS_PROXY_VIEW_ITEM*        m_drawingSheet;
-    NETLIST*                   m_schematicNetlist;
+    BOARD_DESIGN_SETTINGS*            m_designSettings;
+    BOARD*                            m_board;
+    DS_PROXY_VIEW_ITEM*               m_drawingSheet;
+    NETLIST*                          m_schematicNetlist;
+    std::shared_ptr<TUNING_PROFILES>  m_tuningProfiles;
 
     std::vector<std::shared_ptr<DRC_RULE>>  m_rules;
     bool                                    m_rulesValid;
-    std::vector<DRC_TEST_PROVIDER*>         m_testProviders;
+    std::vector<std::unique_ptr<DRC_TEST_PROVIDER>> m_testProviders;
 
     std::vector<int>           m_errorLimits;
     mutable std::mutex         m_errorLimitsMutex;

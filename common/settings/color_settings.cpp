@@ -135,6 +135,7 @@ COLOR_SETTINGS::COLOR_SETTINGS( const wxString& aFilename, bool aAbsolutePath ) 
     CLR( "board.drc_warning",              LAYER_DRC_WARNING        );
     CLR( "board.drc_exclusion",            LAYER_DRC_EXCLUSION      );
     CLR( "board.drc_highlighted",          LAYER_DRC_HIGHLIGHTED    );
+    CLR( "board.live_drc",                 LAYER_LIVE_DRC           );
     CLR( "board.grid",                     LAYER_GRID               );
     CLR( "board.grid_axes",                LAYER_GRID_AXES          );
     CLR( "board.pad_plated_hole",          LAYER_PAD_PLATEDHOLES    );

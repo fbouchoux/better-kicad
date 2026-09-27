@@ -26,6 +26,8 @@
 #include <rc_item.h>
 #include <marker_base.h>
 
+#include <utility>
+
 class DRC_ITEM;
 class MSG_PANEL_ITEM;
 
@@ -76,6 +78,12 @@ public:
     {
         if( GetMarkerType() == MARKER_RATSNEST )
             return false;
+        else if( m_online )
+        {
+            BOX2I box = GetBoundingBox();
+            box.Inflate( aAccuracy );
+            return box.Contains( aPosition );
+        }
         else
             return HitTestMarker( aPosition, aAccuracy );
     }
@@ -158,9 +166,26 @@ public:
         m_pathShapes = aShapes;
         m_pathStart = aStart;
         m_pathEnd = aEnd;
+        m_hasPath = true;
     }
 
     const std::vector<PCB_SHAPE>& GetPath() const { return m_pathShapes; }
+
+    /**
+     * Online DRC markers are transient results produced from a background board snapshot.
+     * They are never serialized and can coexist with markers from the manual checker.
+     */
+    void SetOnline( bool aOnline = true ) { m_online = aOnline; }
+    bool IsOnline() const { return m_online; }
+
+    void SetSeverityOverride( SEVERITY aSeverity ) { m_severityOverride = aSeverity; }
+
+    void SetItemHighlights( std::vector<PCB_SHAPE> aShapes )
+    {
+        m_itemHighlightShapes = std::move( aShapes );
+    }
+
+    const std::vector<PCB_SHAPE>& GetItemHighlights() const { return m_itemHighlightShapes; }
 
 protected:
     void swapData( BOARD_ITEM* aImage ) override;
@@ -172,4 +197,8 @@ protected:
     VECTOR2I               m_pathStart;
     VECTOR2I               m_pathEnd;
     int                    m_pathLength;
+    bool                   m_hasPath;
+    bool                   m_online;
+    SEVERITY               m_severityOverride;
+    std::vector<PCB_SHAPE> m_itemHighlightShapes;
 };

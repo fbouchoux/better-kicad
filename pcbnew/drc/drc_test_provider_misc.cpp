@@ -572,12 +572,19 @@ void DRC_TEST_PROVIDER_MISC::testTextVars()
 
 void DRC_TEST_PROVIDER_MISC::testMissingTuningProfiles()
 {
-    if( !m_board->GetProject() )
-        return;
+    std::shared_ptr<NET_SETTINGS> netSettings = m_board->GetDesignSettings().m_NetSettings;
+    std::shared_ptr<TUNING_PROFILES> tuningProfiles = m_drcEngine->GetTuningProfiles();
 
-    std::shared_ptr<NET_SETTINGS>          netSettings = m_board->GetProject()->GetProjectFile().NetSettings();
-    const std::shared_ptr<TUNING_PROFILES> tuningProfiles =
-            m_board->GetProject()->GetProjectFile().TuningProfileParameters();
+    if( m_board->GetProject() )
+    {
+        netSettings = m_board->GetProject()->GetProjectFile().NetSettings();
+
+        if( !tuningProfiles )
+            tuningProfiles = m_board->GetProject()->GetProjectFile().TuningProfileParameters();
+    }
+
+    if( !netSettings || !tuningProfiles )
+        return;
 
     std::set<wxString> profileNames;
     std::ranges::for_each( tuningProfiles->GetTuningProfiles(),

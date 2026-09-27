@@ -4481,6 +4481,11 @@ bool PCB_SELECTION_TOOL::Selectable( const BOARD_ITEM* aItem, bool checkVisibili
     case PCB_MARKER_T:
         marker = static_cast<const PCB_MARKER*>( aItem );
 
+        // Live DRC markers are a read-only diagnostic overlay.  They still perform their own
+        // hit-testing for hover tooltips, but must never enter the editor selection.
+        if( marker && marker->IsOnline() )
+            return false;
+
         if( marker && marker->IsExcluded() && !board()->IsElementVisible( LAYER_DRC_EXCLUSION ) )
             return false;
 

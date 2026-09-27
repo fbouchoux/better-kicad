@@ -38,6 +38,7 @@
 #include <macros.h>
 #include <dialog_exchange_footprints.h>
 #include <drc/rule_editor/dialog_drc_rule_editor.h>
+#include <widgets/panel_online_drc.h>
 
 
 DRC_TOOL::DRC_TOOL() :
@@ -140,6 +141,22 @@ void DRC_TOOL::RunTests( PROGRESS_REPORTER* aProgressReporter, bool aRefillZones
     // insurance policy and as such we make no attempts to queue up the DRC run or anything.
     if( m_drcRunning )
         return;
+
+    PANEL_ONLINE_DRC* onlineDRC = m_editFrame->GetOnlineDRCPanel();
+
+    if( onlineDRC )
+        onlineDRC->Suspend();
+
+    struct ONLINE_DRC_RESUMER
+    {
+        PANEL_ONLINE_DRC* panel;
+
+        ~ONLINE_DRC_RESUMER()
+        {
+            if( panel )
+                panel->Resume();
+        }
+    } onlineDRCResumer{ onlineDRC };
 
     ZONE_FILLER_TOOL* zoneFiller = m_toolMgr->GetTool<ZONE_FILLER_TOOL>();
     BOARD_COMMIT      commit( m_editFrame );

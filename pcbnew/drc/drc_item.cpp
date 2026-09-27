@@ -666,7 +666,8 @@ void DRC_ITEMS_PROVIDER::SetSeverities( int aSeverities )
 
     for( PCB_MARKER* marker : m_board->Markers() )
     {
-        if( alg::contains( m_markerTypes, marker->GetMarkerType() )
+        if( !marker->IsOnline()
+                && alg::contains( m_markerTypes, marker->GetMarkerType() )
                 && ( marker->GetSeverity() & m_severities ) > 0 )
         {
             m_filteredMarkers.push_back( marker );
@@ -697,7 +698,8 @@ int DRC_ITEMS_PROVIDER::GetCount( int aSeverity ) const
 
     for( PCB_MARKER* marker : m_board->Markers() )
     {
-        if( alg::contains( m_markerTypes, marker->GetMarkerType() )
+        if( !marker->IsOnline()
+                && alg::contains( m_markerTypes, marker->GetMarkerType() )
                 && ( marker->GetSeverity() & aSeverity ) > 0 )
         {
             count++;

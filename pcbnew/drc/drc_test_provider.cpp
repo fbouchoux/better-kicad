@@ -28,6 +28,8 @@
 #include <properties/property.h>
 #include <properties/property_mgr.h>
 
+#include <mutex>
+
 
 // A list of all basic (ie: non-compound) board geometry items
 std::vector<KICAD_T> DRC_TEST_PROVIDER::s_allBasicItems;
@@ -36,15 +38,37 @@ std::vector<KICAD_T> DRC_TEST_PROVIDER::s_allBasicItemsButZones;
 
 DRC_TEST_PROVIDER_REGISTRY::~DRC_TEST_PROVIDER_REGISTRY()
 {
-    for( DRC_TEST_PROVIDER* provider : m_providers )
-        delete provider;
+}
+
+
+std::vector<std::unique_ptr<DRC_TEST_PROVIDER>>
+DRC_TEST_PROVIDER_REGISTRY::CreateTestProviders() const
+{
+    std::vector<std::unique_ptr<DRC_TEST_PROVIDER>> providers;
+    providers.reserve( m_factories.size() );
+
+    for( const FACTORY& factory : m_factories )
+        providers.emplace_back( factory() );
+
+    return providers;
 }
 
 
 DRC_SHOWMATCHES_PROVIDER_REGISTRY::~DRC_SHOWMATCHES_PROVIDER_REGISTRY()
 {
-    for( DRC_TEST_PROVIDER* provider : m_providers )
-        delete provider;
+}
+
+
+std::vector<std::unique_ptr<DRC_TEST_PROVIDER>>
+DRC_SHOWMATCHES_PROVIDER_REGISTRY::CreateShowMatchesProviders() const
+{
+    std::vector<std::unique_ptr<DRC_TEST_PROVIDER>> providers;
+    providers.reserve( m_factories.size() );
+
+    for( const FACTORY& factory : m_factories )
+        providers.emplace_back( factory() );
+
+    return providers;
 }
 
 
@@ -58,19 +82,23 @@ DRC_TEST_PROVIDER::DRC_TEST_PROVIDER() :
 
 void DRC_TEST_PROVIDER::Init()
 {
-    if( s_allBasicItems.size() == 0 )
-    {
-        for( int i = 0; i < MAX_STRUCT_TYPE_ID; i++ )
-        {
-            if( i != PCB_FOOTPRINT_T && i != PCB_GROUP_T )
-            {
-                s_allBasicItems.push_back( (KICAD_T) i );
+    static std::once_flag initFlag;
 
-                if( i != PCB_ZONE_T )
-                    s_allBasicItemsButZones.push_back( (KICAD_T) i );
-            }
-        }
-    }
+    std::call_once(
+            initFlag,
+            []()
+            {
+                for( int i = 0; i < MAX_STRUCT_TYPE_ID; i++ )
+                {
+                    if( i != PCB_FOOTPRINT_T && i != PCB_GROUP_T )
+                    {
+                        s_allBasicItems.push_back( (KICAD_T) i );
+
+                        if( i != PCB_ZONE_T )
+                            s_allBasicItemsButZones.push_back( (KICAD_T) i );
+                    }
+                }
+            } );
 }
 
 

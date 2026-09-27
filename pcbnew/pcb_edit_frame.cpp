@@ -148,6 +148,7 @@
 #include <widgets/appearance_controls.h>
 #include <widgets/pcb_design_block_pane.h>
 #include <widgets/pcb_search_pane.h>
+#include <widgets/panel_online_drc.h>
 #include <widgets/panel_constraints.h>
 #include <widgets/wx_infobar.h>
 #include <widgets/panel_selection_filter.h>
@@ -323,6 +324,7 @@ PCB_EDIT_FRAME::PCB_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
     m_netInspectorPanel = new PCB_NET_INSPECTOR_PANEL( this, this );
     m_designBlocksPane = new PCB_DESIGN_BLOCK_PANE( this, nullptr, m_designBlockHistoryList );
     m_constraintsPanel = new PANEL_CONSTRAINTS( this );
+    m_onlineDRCPanel = new PANEL_ONLINE_DRC( this );
 
     m_auimgr.SetManagedWindow( this );
 
@@ -433,6 +435,16 @@ PCB_EDIT_FRAME::PCB_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
                       .CloseButton( true )
                       .Hide() );
 
+    m_auimgr.AddPane( m_onlineDRCPanel, EDA_PANE().Name( OnlineDRCPaneName() )
+                      .Bottom().Layer( 2 )
+                      .Caption( _( "Online DRC" ) ).PaneBorder( false )
+                      .MinSize( FromDIP( wxSize( 360, 120 ) ) )
+                      .BestSize( FromDIP( wxSize( 700, 220 ) ) )
+                      .FloatingSize( FromDIP( wxSize( 700, 300 ) ) )
+                      .DestroyOnClose( false )
+                      .CloseButton( false )
+                      .Show( true ) );
+
     RestoreAuiLayout();
 
     m_auimgr.GetPane( "LayersManager" ).Show( m_ShowLayerManagerTools );
@@ -441,6 +453,7 @@ PCB_EDIT_FRAME::PCB_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
     m_auimgr.GetPane( NetInspectorPanelName() ).Show( m_ShowNetInspector );
     m_auimgr.GetPane( SearchPaneName() ).Show( m_ShowSearch );
     m_auimgr.GetPane( DesignBlocksPaneName() ).Show( GetPcbNewSettings()->m_AuiPanels.design_blocks_show );
+    m_auimgr.GetPane( OnlineDRCPaneName() ).Show( true );
 
     // The selection filter doesn't need to grow in the vertical direction when docked
     m_auimgr.GetPane( "SelectionFilter" ).dock_proportion = 0;
@@ -775,6 +788,9 @@ void PCB_EDIT_FRAME::OnCrossProbeFlashTimer( wxTimerEvent& aEvent )
 
 PCB_EDIT_FRAME::~PCB_EDIT_FRAME()
 {
+    if( m_onlineDRCPanel )
+        m_onlineDRCPanel->Shutdown();
+
     GetCanvas()->Unbind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onCtrlMouseWheel, this );
 
     // Always ensure that we are unregistered even in a close without graceful doCloseWindow()
@@ -2310,6 +2326,7 @@ void PCB_EDIT_FRAME::ShowChangedLanguage()
     m_auimgr.GetPane( m_selectionFilterPanel ).Caption( _( "Selection Filter" ) );
     m_auimgr.GetPane( m_propertiesPanel ).Caption( _( "Properties" ) );
     m_auimgr.GetPane( m_netInspectorPanel ).Caption( _( "Net Inspector" ) );
+    m_auimgr.GetPane( m_onlineDRCPanel ).Caption( _( "Online DRC" ) );
     m_auimgr.Update();
 
     UpdateTitle();

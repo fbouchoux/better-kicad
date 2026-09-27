@@ -455,6 +455,7 @@ const APPEARANCE_CONTROLS::APPEARANCE_SETTING APPEARANCE_CONTROLS::s_objectSetti
     RR( _HKI( "DRC Warnings" ),         LAYER_DRC_WARNING,        _HKI( "DRC violations with a Warning severity" ) ),
     RR( _HKI( "DRC Errors" ),           LAYER_DRC_ERROR,          _HKI( "DRC violations with an Error severity" ) ),
     RR( _HKI( "DRC Exclusions" ),       LAYER_DRC_EXCLUSION,      _HKI( "DRC violations which have been individually excluded" ) ),
+    RR( _HKI( "Live DRC" ),             LAYER_LIVE_DRC,           _HKI( "Show violations found by the live design rules checker" ) ),
     RR( _HKI( "Anchors" ),              LAYER_ANCHOR,             _HKI( "Show footprint and text origins as a cross" ) ),
     RR( _HKI( "Points" ),               LAYER_POINTS,             _HKI( "Show explicit snap points as crosses" ) ),
     RR( _HKI( "Grids" ),                LAYER_SUBGRIDS,           _HKI( "Show custom routing/placement grids" ) ),

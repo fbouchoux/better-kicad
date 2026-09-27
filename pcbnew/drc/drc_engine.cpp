@@ -545,10 +545,16 @@ void DRC_ENGINE::loadImplicitRules()
                 }
             };
 
-    if( PROJECT* project = m_board->GetProject() )
-    {
-        std::shared_ptr<TUNING_PROFILES> tuningParams = project->GetProjectFile().TuningProfileParameters();
+    std::shared_ptr<TUNING_PROFILES> tuningParams = m_tuningProfiles;
 
+    if( !tuningParams )
+    {
+        if( PROJECT* project = m_board->GetProject() )
+            tuningParams = project->GetProjectFile().TuningProfileParameters();
+    }
+
+    if( tuningParams )
+    {
         auto addNetclassTuningProfileRules =
                 [&tuningParams, &addTuningSingleRule, &addTuningDifferentialRules]( NETCLASS* aNetclass )
                 {
@@ -778,25 +784,28 @@ void DRC_ENGINE::compileRules()
 
 void DRC_ENGINE::InitEngine( const std::shared_ptr<DRC_RULE>& rule )
 {
-    m_testProviders = DRC_SHOWMATCHES_PROVIDER_REGISTRY::Instance().GetShowMatchesProviders();
-
-    for( DRC_TEST_PROVIDER* provider : m_testProviders )
-    {
-        if( m_logReporter )
-            m_logReporter->Report( wxString::Format( wxT( "Create DRC provider: '%s'" ), provider->GetName() ) );
-
-        provider->SetDRCEngine( this );
-    }
-
-    // Existing markers may hold raw pointers to DRC_RULEs we're about to destroy.
+    // Existing markers may hold raw pointers to rules and providers we're about to destroy.
     // Null them out so GetSeverity() falls back to the board design settings.
     if( m_board )
     {
         for( PCB_MARKER* marker : m_board->Markers() )
         {
             if( DRC_ITEM* drcItem = static_cast<DRC_ITEM*>( marker->GetRCItem().get() ) )
+            {
                 drcItem->SetViolatingRule( nullptr );
+                drcItem->SetViolatingTest( nullptr );
+            }
         }
+    }
+
+    m_testProviders = DRC_SHOWMATCHES_PROVIDER_REGISTRY::Instance().CreateShowMatchesProviders();
+
+    for( const std::unique_ptr<DRC_TEST_PROVIDER>& provider : m_testProviders )
+    {
+        if( m_logReporter )
+            m_logReporter->Report( wxString::Format( wxT( "Create DRC provider: '%s'" ), provider->GetName() ) );
+
+        provider->SetDRCEngine( this );
     }
 
     m_rules.clear();
@@ -833,25 +842,28 @@ void DRC_ENGINE::InitEngine( const std::shared_ptr<DRC_RULE>& rule )
 
 void DRC_ENGINE::InitEngine( const wxFileName& aRulePath )
 {
-    m_testProviders = DRC_TEST_PROVIDER_REGISTRY::Instance().GetTestProviders();
-
-    for( DRC_TEST_PROVIDER* provider : m_testProviders )
-    {
-        if( m_logReporter )
-            m_logReporter->Report( wxString::Format( wxT( "Create DRC provider: '%s'" ), provider->GetName() ) );
-
-        provider->SetDRCEngine( this );
-    }
-
-    // Existing markers may hold raw pointers to DRC_RULEs we're about to destroy.
+    // Existing markers may hold raw pointers to rules and providers we're about to destroy.
     // Null them out so GetSeverity() falls back to the board design settings.
     if( m_board )
     {
         for( PCB_MARKER* marker : m_board->Markers() )
         {
             if( DRC_ITEM* drcItem = static_cast<DRC_ITEM*>( marker->GetRCItem().get() ) )
+            {
                 drcItem->SetViolatingRule( nullptr );
+                drcItem->SetViolatingTest( nullptr );
+            }
         }
+    }
+
+    m_testProviders = DRC_TEST_PROVIDER_REGISTRY::Instance().CreateTestProviders();
+
+    for( const std::unique_ptr<DRC_TEST_PROVIDER>& provider : m_testProviders )
+    {
+        if( m_logReporter )
+            m_logReporter->Report( wxString::Format( wxT( "Create DRC provider: '%s'" ), provider->GetName() ) );
+
+        provider->SetDRCEngine( this );
     }
 
     m_rules.clear();
@@ -944,7 +956,7 @@ void DRC_ENGINE::RunTests( EDA_UNITS aUnits, bool aReportAllTrackErrors, bool aT
 
     int timestamp = m_board->GetTimeStamp();
 
-    for( DRC_TEST_PROVIDER* provider : m_testProviders )
+    for( const std::unique_ptr<DRC_TEST_PROVIDER>& provider : m_testProviders )
     {
         if( m_logReporter )
             m_logReporter->Report( wxString::Format( wxT( "Run DRC provider: '%s'" ), provider->GetName() ) );
@@ -2891,13 +2903,25 @@ bool ruleMatchesPair( const DRC_RULE& aRule, const BOARD_ITEM* aItemA, const BOA
 
 DRC_TEST_PROVIDER* DRC_ENGINE::GetTestProvider( const wxString& name ) const
 {
-    for( DRC_TEST_PROVIDER* prov : m_testProviders )
+    for( const std::unique_ptr<DRC_TEST_PROVIDER>& prov : m_testProviders )
     {
         if( name == prov->GetName() )
-            return prov;
+            return prov.get();
     }
 
     return nullptr;
+}
+
+
+std::vector<DRC_TEST_PROVIDER*> DRC_ENGINE::GetTestProviders() const
+{
+    std::vector<DRC_TEST_PROVIDER*> providers;
+    providers.reserve( m_testProviders.size() );
+
+    for( const std::unique_ptr<DRC_TEST_PROVIDER>& provider : m_testProviders )
+        providers.push_back( provider.get() );
+
+    return providers;
 }
 
 

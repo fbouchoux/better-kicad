@@ -374,11 +374,13 @@ public:
                     const std::map<std::string, UTF8>* aProperties = nullptr ) override;
 
     /** Serialize a BOARD to an OUTPUTFORMATTER without file I/O or Prettify.
-     *  Handles init(), EmbedFonts/ClearEmbeddedFonts, header, Format(), and footer.
+     *  Handles init(), header, Format(), and footer.  When aUpdateEmbeddedFonts is true it also
+     *  runs EmbedFonts/ClearEmbeddedFonts; callers taking a read-only snapshot should pass false.
      *  The caller owns the formatter and is responsible for flushing/closing it.
      *  Skips GroupsSanityCheck (no UI interaction allowed from timer callbacks). */
     void FormatBoardToFormatter( OUTPUTFORMATTER* aOut, BOARD* aBoard,
-                                 const std::map<std::string, UTF8>* aProperties = nullptr );
+                                 const std::map<std::string, UTF8>* aProperties = nullptr,
+                                 bool aUpdateEmbeddedFonts = true );
 
     void DoLoad( LINE_READER& aReader, BOARD& aBoard, bool aIsNewLoad, const std::map<std::string, UTF8>* aProperties,
                  PROGRESS_REPORTER* aProgressReporter, unsigned aLineCount );

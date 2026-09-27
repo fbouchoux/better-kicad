@@ -52,7 +52,10 @@
 PCB_MARKER::PCB_MARKER( std::shared_ptr<RC_ITEM> aItem, const VECTOR2I& aPosition, int aLayer ) :
         BOARD_ITEM( nullptr, PCB_MARKER_T, F_Cu ),  // parent set during BOARD::Add()
         MARKER_BASE( SCALING_FACTOR, aItem ),
-        m_pathLength( 0 )
+        m_pathLength( 0 ),
+        m_hasPath( false ),
+        m_online( false ),
+        m_severityOverride( RPT_SEVERITY_UNDEFINED )
 {
     if( m_rcItem )
     {
@@ -373,6 +376,9 @@ SEVERITY PCB_MARKER::GetSeverity() const
     if( IsExcluded() )
         return RPT_SEVERITY_EXCLUSION;
 
+    if( m_severityOverride != RPT_SEVERITY_UNDEFINED )
+        return m_severityOverride;
+
     DRC_ITEM* item = static_cast<DRC_ITEM*>( m_rcItem.get() );
 
     if( item->GetErrorCode() == DRCE_GENERIC_WARNING )
@@ -394,6 +400,9 @@ std::vector<int> PCB_MARKER::ViewGetLayers() const
     if( GetMarkerType() == MARKER_RATSNEST )
         return {};
 
+    if( IsOnline() )
+        return { LAYER_LIVE_DRC };
+
     std::vector<int> layers{ 0, LAYER_MARKER_SHADOWS, LAYER_DRC_HIGHLIGHTED };
 
     switch( GetSeverity() )
@@ -410,6 +419,9 @@ std::vector<int> PCB_MARKER::ViewGetLayers() const
 
 GAL_LAYER_ID PCB_MARKER::GetColorLayer() const
 {
+    if( IsOnline() )
+        return LAYER_LIVE_DRC;
+
     switch( GetSeverity() )
     {
     default:
@@ -436,8 +448,25 @@ std::vector<PCB_SHAPE> PCB_MARKER::GetErrorLegendShapes() const
 {
     STROKE_PARAMS          hairline( 1.0 );     // Segments of width 1.0 will get drawn as lines by PCB_PAINTER
     std::vector<PCB_SHAPE> pathShapes;
+    VECTOR2I               pathStart = m_hasPath ? m_pathStart : GetPosition();
+    VECTOR2I               pathEnd = m_hasPath ? m_pathEnd : GetPosition();
 
-    if( m_pathStart == m_pathEnd )
+    if( m_online )
+    {
+        PCB_SHAPE circle( nullptr, SHAPE_T::CIRCLE );
+        circle.SetStroke( hairline );
+        circle.SetPosition( pathStart );
+        circle.SetRadius( KiROUND( 4.5 * MarkerScale() ) );
+        pathShapes.push_back( circle );
+
+        if( pathEnd != pathStart )
+        {
+            circle.SetPosition( pathEnd );
+            pathShapes.push_back( circle );
+        }
+    }
+
+    if( pathStart == pathEnd && !m_online )
     {
         // Add a collision 'X'
         const int len = KiROUND( 2.5 * MarkerScale() );
@@ -445,12 +474,12 @@ std::vector<PCB_SHAPE> PCB_MARKER::GetErrorLegendShapes() const
         PCB_SHAPE s( nullptr, SHAPE_T::SEGMENT );
         s.SetStroke( hairline );
 
-        s.SetStart( m_pathStart + VECTOR2I( -len, -len ) );
-        s.SetEnd( m_pathStart + VECTOR2I( len, len ) );
+        s.SetStart( pathStart + VECTOR2I( -len, -len ) );
+        s.SetEnd( pathStart + VECTOR2I( len, len ) );
         pathShapes.push_back( s );
 
-        s.SetStart( m_pathStart + VECTOR2I( -len, len ) );
-        s.SetEnd( m_pathStart + VECTOR2I( len, -len ) );
+        s.SetStart( pathStart + VECTOR2I( -len, len ) );
+        s.SetEnd( pathStart + VECTOR2I( len, -len ) );
         pathShapes.push_back( s );
     }
     else
@@ -462,8 +491,9 @@ std::vector<PCB_SHAPE> PCB_MARKER::GetErrorLegendShapes() const
             pathShapes.push_back( std::move( shape ) );
         }
 
-        // Draw perpendicular begin/end stops
-        if( pathShapes.size() > 0 )
+        // Draw perpendicular begin/end stops on manual markers.  Online markers use circles at
+        // the measured points, which remain clear when several violations overlap.
+        if( !m_online && pathShapes.size() > 0 )
         {
             VECTOR2I V1 = pathShapes[0].GetStart() - pathShapes[0].GetEnd();
             VECTOR2I V2 = pathShapes.back().GetStart() - pathShapes.back().GetEnd();
@@ -473,12 +503,12 @@ std::vector<PCB_SHAPE> PCB_MARKER::GetErrorLegendShapes() const
             PCB_SHAPE s( nullptr, SHAPE_T::SEGMENT );
             s.SetStroke( hairline );
 
-            s.SetStart( m_pathStart + V1 );
-            s.SetEnd( m_pathStart - V1 );
+            s.SetStart( pathStart + V1 );
+            s.SetEnd( pathStart - V1 );
             pathShapes.push_back( s );
 
-            s.SetStart( m_pathEnd + V2 );
-            s.SetEnd( m_pathEnd - V2 );
+            s.SetStart( pathEnd + V2 );
+            s.SetEnd( pathEnd - V2 );
             pathShapes.push_back( s );
         }
     }
@@ -499,6 +529,9 @@ const BOX2I PCB_MARKER::GetBoundingBox() const
     BOX2I box = GetBoundingBoxMarker();
 
     for( const PCB_SHAPE& s : m_pathShapes )
+        box.Merge( s.GetBoundingBox() );
+
+    for( const PCB_SHAPE& s : m_itemHighlightShapes )
         box.Merge( s.GetBoundingBox() );
 
     return box;
