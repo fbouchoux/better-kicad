@@ -496,6 +496,121 @@ BOOST_FIXTURE_TEST_CASE( PNSCommitRemovesShortDanglingSegments, PNS_TEST_FIXTURE
 }
 
 
+/**
+ * Commit contained overlaps once while preserving the copper span and interior junctions.
+ */
+BOOST_FIXTURE_TEST_CASE( PNSCommitRemovesCoveredSegments, PNS_TEST_FIXTURE )
+{
+    // Cover both directions of containment between existing and newly routed segments
+    for( bool newCovering : { false, true } )
+    {
+        for( bool diagonal : { false, true } )
+        {
+            m_router->SyncWorld();
+            PNS::NODE* world = m_router->GetWorld();
+            PNS::NET_HANDLE net = reinterpret_cast<PNS::NET_HANDLE>( 1 );
+            auto point = [&]( int aX ) { return VECTOR2I( aX, diagonal ? aX : 0 ); };
+
+            auto addSegment = [&]( PNS::NODE* aNode, int aStart, int aEnd )
+            {
+                auto segment = std::make_unique<PNS::SEGMENT>(
+                        SEG( point( aStart ), point( aEnd ) ), net );
+                segment->SetWidth( 1000 );
+                segment->SetLayers( PNS_LAYER_RANGE( F_Cu ) );
+                BOOST_REQUIRE( aNode->Add( std::move( segment ), true ) );
+            };
+
+            addSegment( world, newCovering ? 7000 : 0, newCovering ? 3000 : 10000 );
+            PNS::NODE* branch = world->Branch();
+            addSegment( branch, newCovering ? 10000 : 3000, newCovering ? 0 : 7000 );
+
+            // Repeated backtracking can leave several nested segments, including duplicates
+            addSegment( branch, 3000, 5000 );
+            addSegment( branch, 5000, 3000 );
+            auto via = std::make_unique<PNS::VIA>(
+                    point( 5000 ), PNS_LAYER_RANGE( F_Cu, B_Cu ), 600, 300 );
+            via->SetNet( net );
+            branch->Add( std::move( via ) );
+            m_ruleResolver.m_hasGeometryDependentRules = true;
+            m_router->CommitRouting( branch );
+
+            // All former endpoints remain, with exactly one segment covering each interval
+            std::set<PNS::ITEM*> segments;
+            world->AllItemsInNet( net, segments, PNS::ITEM::SEGMENT_T );
+            BOOST_REQUIRE_EQUAL( segments.size(), 4 );
+
+            for( int x : { 1000, 4000, 6000, 9000 } )
+            {
+                int coverage = 0;
+
+                for( PNS::ITEM* item : segments )
+                {
+                    if( static_cast<PNS::SEGMENT*>( item )->Seg().Contains( point( x ), 0 ) )
+                        ++coverage;
+                }
+
+                BOOST_CHECK_EQUAL( coverage, 1 );
+            }
+
+            const PNS::JOINT* joint = world->FindJoint( point( 5000 ), F_Cu, net );
+            BOOST_REQUIRE( joint );
+            BOOST_CHECK_EQUAL( joint->LinkCount( PNS::ITEM::SEGMENT_T ), 2 );
+            BOOST_CHECK_EQUAL( joint->LinkCount( PNS::ITEM::VIA_T ), 1 );
+        }
+    }
+}
+
+
+/**
+ * Keep unrelated, nonidentical, and protected copper out of contained-overlap cleanup.
+ */
+BOOST_FIXTURE_TEST_CASE( PNSCommitCoveredSegmentsScope, PNS_TEST_FIXTURE )
+{
+    // Different net, layer, width, offset, partial overlap, and locks must remain unchanged
+    for( int variant = 0; variant < 7; ++variant )
+    {
+        m_router->SyncWorld();
+        PNS::NODE* world = m_router->GetWorld();
+        PNS::NET_HANDLE net = reinterpret_cast<PNS::NET_HANDLE>( 1 );
+        auto existing = std::make_unique<PNS::SEGMENT>(
+                SEG( VECTOR2I( 0, 0 ), VECTOR2I( 10000, 0 ) ), net );
+        existing->SetWidth( 1000 );
+        existing->SetLayers( PNS_LAYER_RANGE( F_Cu ) );
+
+        if( variant == 5 )
+            existing->Mark( PNS::MK_LOCKED );
+
+        PNS::SEGMENT* original = existing.get();
+        BOOST_REQUIRE( world->Add( std::move( existing ) ) );
+
+        // An untouched existing overlap must not be swept up by an unrelated commit
+        PNS::NODE* branch = variant == 6 ? world : world->Branch();
+        PNS::NET_HANDLE otherNet = variant == 0 ? reinterpret_cast<PNS::NET_HANDLE>( 2 ) : net;
+        int offset = variant == 3 ? 1 : 0;
+        auto added = std::make_unique<PNS::SEGMENT>(
+                SEG( VECTOR2I( 3000, offset ), VECTOR2I( variant == 4 ? 12000 : 7000, offset ) ),
+                otherNet );
+        added->SetWidth( variant == 2 ? 500 : 1000 );
+        added->SetLayers( PNS_LAYER_RANGE( variant == 1 ? B_Cu : F_Cu ) );
+        PNS::SEGMENT* untouched = added.get();
+        BOOST_REQUIRE( branch->Add( std::move( added ) ) );
+
+        if( variant == 6 )
+            branch = world->Branch();
+
+        m_router->CommitRouting( branch );
+
+        // Both original items must survive without endpoint changes
+        std::set<PNS::ITEM*> segments;
+        world->AllItemsInNet( net, segments, PNS::ITEM::SEGMENT_T );
+        world->AllItemsInNet( otherNet, segments, PNS::ITEM::SEGMENT_T );
+        BOOST_CHECK_EQUAL( segments.size(), 2 );
+        BOOST_CHECK_EQUAL( segments.count( original ), 1 );
+        BOOST_CHECK_EQUAL( segments.count( untouched ), 1 );
+    }
+}
+
+
 BOOST_FIXTURE_TEST_CASE( PNSShoveOwnsRootLineHistory, PNS_TEST_FIXTURE )
 {
     PNS::NODE world;
@@ -1211,6 +1326,105 @@ BOOST_FIXTURE_TEST_CASE( PNSDragPreservesGeometryDependentRuleBoundaries, PNS_TE
                                geometryDependent );
             BOOST_CHECK_EQUAL( line->CLine().Find( VECTOR2I( 2000000, 0 ) ) >= 0,
                                geometryDependent );
+
+            // The temporary cursor anchor must not become another preserved rule boundary
+            BOOST_CHECK_LT( line->CLine().Find( cursor ), 0 );
+        }
+    }
+}
+
+
+/**
+ * Repeated drags must not split the NDP130 BGA track at each optimizer cursor anchor.
+ */
+BOOST_FIXTURE_TEST_CASE( PNSDragDoesNotCommitCursorSplits, PNS_TEST_FIXTURE )
+{
+    // Exercise both optimized drag modes with geometry-dependent rule preservation enabled
+    for( PNS::PNS_MODE mode : { PNS::RM_Walkaround, PNS::RM_Shove } )
+    {
+        PNS::ROUTING_SETTINGS settings( nullptr, "" );
+        settings.SetMode( mode );
+        settings.SetSmoothDraggedSegments( false );
+        m_router->LoadSettings( &settings );
+        m_ruleResolver.m_hasGeometryDependentRules = true;
+        m_router->SyncWorld();
+        PNS::NODE* world = m_router->GetWorld();
+        world->SetMaxClearance( 10000000 );
+        world->SetRuleResolver( &m_ruleResolver );
+        PNS::NET_HANDLE net = reinterpret_cast<PNS::NET_HANDLE>( 1 );
+
+        // These are the moved horizontal segment and its neighbors from NDP130_BT1
+        const std::vector<VECTOR2I> points = {
+            { 20957873, 4400650 }, { 21140977, 4217546 },
+            { 21394531, 4217546 }, { 21644531, 4467546 }
+        };
+
+        for( size_t i = 1; i < points.size(); ++i )
+        {
+            auto segment = std::make_unique<PNS::SEGMENT>( SEG( points[i - 1], points[i] ), net );
+            segment->SetWidth( 100000 );
+            segment->SetLayers( PNS_LAYER_RANGE( In2_Cu ) );
+            BOOST_REQUIRE( world->Add( std::move( segment ) ) );
+        }
+
+        // Commit each move so a leaked anchor would become part of the next drag's input
+        for( int step = 0; step < 4; ++step )
+        {
+            std::set<PNS::ITEM*> segments;
+            world->AllItemsInNet( net, segments, PNS::ITEM::SEGMENT_T );
+            BOOST_REQUIRE_EQUAL( segments.size(), 3 );
+            PNS::SEGMENT* horizontal = nullptr;
+
+            for( PNS::ITEM* item : segments )
+            {
+                auto segment = static_cast<PNS::SEGMENT*>( item );
+
+                if( segment->Seg().A.y == segment->Seg().B.y )
+                    horizontal = segment;
+            }
+
+            BOOST_REQUIRE( horizontal );
+            const int cursorX = 21248581 + step * 1000;
+            const VECTOR2I start( cursorX, horizontal->Seg().A.y );
+            const VECTOR2I target( cursorX, step % 2 == 0 ? 4175309 : 4217546 );
+            PNS::DRAGGER dragger( m_router );
+            dragger.SetWorld( world );
+            dragger.SetMode( PNS::DM_SEGMENT );
+            PNS::ITEM_SET items;
+            items.Add( horizontal );
+            BOOST_REQUIRE( dragger.Start( start, items ) );
+            BOOST_REQUIRE( dragger.Drag( target ) );
+
+            // Check the preview before commit cleanup can hide the source of fragmentation
+            const PNS::ITEM_SET traces = dragger.Traces();
+            BOOST_REQUIRE_EQUAL( traces.Size(), 1 );
+            BOOST_REQUIRE( traces[0]->OfKind( PNS::ITEM::LINE_T ) );
+            const PNS::LINE* line = static_cast<const PNS::LINE*>( traces[0] );
+            BOOST_CHECK_EQUAL( line->SegmentCount(), 3 );
+            BOOST_CHECK_LT( line->CLine().Find( target ), 0 );
+            BOOST_REQUIRE( dragger.FixRoute( false ) );
+
+            // The first move must save the single horizontal span seen split in NDP130_BT2
+            segments.clear();
+            world->AllItemsInNet( net, segments, PNS::ITEM::SEGMENT_T );
+            BOOST_CHECK_EQUAL( segments.size(), 3 );
+            BOOST_CHECK( world->FindJoint( target, In2_Cu, net ) == nullptr );
+
+            if( step == 0 )
+            {
+                const VECTOR2I expectedStart( 21183214, 4175309 );
+                const VECTOR2I expectedEnd( 21352294, 4175309 );
+                bool foundSpan = false;
+
+                for( PNS::ITEM* item : segments )
+                {
+                    const SEG& segment = static_cast<PNS::SEGMENT*>( item )->Seg();
+                    foundSpan |= ( segment.A == expectedStart && segment.B == expectedEnd )
+                                 || ( segment.A == expectedEnd && segment.B == expectedStart );
+                }
+
+                BOOST_CHECK( foundSpan );
+            }
         }
     }
 }

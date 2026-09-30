@@ -19,9 +19,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include <gal/graphics_abstraction_layer.h>
@@ -877,6 +880,9 @@ void ROUTER::CommitRouting( NODE* aNode )
     // Drop sub-width stubs before translating the PNS changes back to board items
     removeShortDanglingSegments( aNode );
 
+    // Remove covered copper while retaining endpoints used by junctions and rule boundaries
+    removeCoveredSegments( aNode );
+
     NODE::ITEM_VECTOR removed;
     NODE::ITEM_VECTOR added;
     NODE::ITEM_VECTOR changed;
@@ -963,6 +969,127 @@ void ROUTER::removeShortDanglingSegments( NODE* aNode )
             }
         }
     } while( removedSegment );
+}
+
+
+/**
+ * Remove same-width contained overlaps touched by this commit, preserving every endpoint.
+ */
+void ROUTER::removeCoveredSegments( NODE* aNode )
+{
+    NODE::ITEM_VECTOR removed;
+    NODE::ITEM_VECTOR pending;
+    aNode->GetUpdatedItems( removed, pending );
+
+    // Keep a live set per affected net so replacements never revisit removed items
+    std::map<NET_HANDLE, std::set<ITEM*>> netItems;
+
+    for( size_t index = 0; index < pending.size(); ++index )
+    {
+        ITEM* item = pending[index];
+
+        if( !item->OfKind( ITEM::SEGMENT_T ) || item->IsVirtual() || item->IsLocked() )
+            continue;
+
+        auto [netIt, inserted] = netItems.try_emplace( item->Net() );
+
+        if( inserted )
+            aNode->AllItemsInNet( item->Net(), netIt->second, ITEM::SEGMENT_T );
+
+        std::set<ITEM*>& segments = netIt->second;
+
+        if( !segments.count( item ) )
+            continue;
+
+        SEGMENT* segment = static_cast<SEGMENT*>( item );
+
+        for( ITEM* otherItem : segments )
+        {
+            if( otherItem == item || otherItem->IsVirtual() || otherItem->IsLocked() )
+                continue;
+
+            SEGMENT* other = static_cast<SEGMENT*>( otherItem );
+
+            if( segment->Layers() != other->Layers() || segment->Width() != other->Width() )
+                continue;
+
+            // Require exact containment, not the tolerance used for snapping or collisions
+            auto contains = []( const SEG& aOuter, const SEG& aInner )
+            {
+                SEG::ecoord qa, qb, qc;
+                aOuter.CanonicalCoefs( qa, qb, qc );
+
+                for( const VECTOR2I& point : { aInner.A, aInner.B } )
+                {
+                    if( qa * point.x + qb * point.y + qc != 0
+                            || point.x < std::min( aOuter.A.x, aOuter.B.x )
+                            || point.x > std::max( aOuter.A.x, aOuter.B.x )
+                            || point.y < std::min( aOuter.A.y, aOuter.B.y )
+                            || point.y > std::max( aOuter.A.y, aOuter.B.y ) )
+                        return false;
+                }
+
+                return aOuter.A != aOuter.B;
+            };
+
+            SEGMENT* covering = segment;
+            SEGMENT* covered = other;
+
+            if( !contains( covering->Seg(), covered->Seg() ) )
+            {
+                std::swap( covering, covered );
+
+                if( !contains( covering->Seg(), covered->Seg() ) )
+                    continue;
+            }
+
+            // Keep the shorter segment and trim the covering one around it so interior
+            // junctions remain real router joints instead of landing in a segment's middle.
+            VECTOR2I start = covered->Seg().A;
+            VECTOR2I end = covered->Seg().B;
+
+            if( ( start - covering->Seg().A ).SquaredEuclideanNorm()
+                    > ( end - covering->Seg().A ).SquaredEuclideanNorm() )
+                std::swap( start, end );
+
+            std::vector<std::unique_ptr<SEGMENT>> tails;
+
+            for( const SEG& tail : { SEG( covering->Seg().A, start ),
+                                     SEG( end, covering->Seg().B ) } )
+            {
+                if( tail.A == tail.B )
+                    continue;
+
+                std::unique_ptr<SEGMENT> replacement( covering->Clone() );
+                replacement->SetEnds( tail.A, tail.B );
+
+                // Only one replacement may reuse the original board item's identity
+                if( !tails.empty() )
+                    replacement->SetParent( nullptr );
+
+                tails.push_back( std::move( replacement ) );
+            }
+
+            // Update the router node before exporting changes to the board and its undo entry
+            aNode->Remove( covering );
+            segments.erase( covering );
+
+            for( std::unique_ptr<SEGMENT>& tail : tails )
+            {
+                SEGMENT* replacement = tail.get();
+
+                if( aNode->Add( std::move( tail ), true ) )
+                {
+                    segments.insert( replacement );
+                    pending.push_back( replacement );
+                }
+            }
+
+            // Recheck the survivor against additional overlaps from repeated dragging
+            pending.push_back( covered );
+            break;
+        }
+    }
 }
 
 

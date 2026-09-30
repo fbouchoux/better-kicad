@@ -263,6 +263,11 @@ public:
                                   ITEM*& aOtherEndItem );
 private:
     /**
+     * Remove same-width contained overlaps touched by this commit, preserving every endpoint.
+     */
+    void removeCoveredSegments( NODE* aNode );
+
+    /**
      * Remove newly created or modified terminal segments shorter than 20% of their width.
      */
     void removeShortDanglingSegments( NODE* aNode );

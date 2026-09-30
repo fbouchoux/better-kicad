@@ -617,6 +617,8 @@ void DRAGGER::optimizeAndUpdateDraggedLine( LINE& aDragged, const LINE& aOrig, c
     if( aDragged.CLine().Find( aP ) < 0 )
         anchor = bestAnchorForPoint( aDragged.CLine(), aP );
 
+    // Remember whether the optimizer anchor is a real boundary or a temporary cursor split
+    const bool temporaryAnchor = aDragged.CLine().Find( anchor ) < 0;
     optimizer.SetPreserveVertex( anchor );
     aDragged.Line().Split( anchor );
 
@@ -637,6 +639,25 @@ void DRAGGER::optimizeAndUpdateDraggedLine( LINE& aDragged, const LINE& aOrig, c
     PNS_DBG( Dbg(), AddItem, &aDragged, RED, 0, wxT( "drag-preopt" ) );
 
     optimizer.Optimize( &aDragged, &draggedPostOpt, &origLine );
+
+    // The cursor split is not a rule boundary and must not accumulate across drag commits
+    if( temporaryAnchor )
+    {
+        SHAPE_LINE_CHAIN& path = draggedPostOpt.Line();
+        int               index = path.Find( anchor );
+
+        // Keep any actual corner created by optimization, including arc endpoints
+        if( index > 0 && index < path.PointCount() - 1
+                && !path.IsArcSegment( index - 1 ) && !path.IsArcSegment( index ) )
+        {
+            const VECTOR2I incoming = path.CPoint( index ) - path.CPoint( index - 1 );
+            const VECTOR2I outgoing = path.CPoint( index + 1 ) - path.CPoint( index );
+
+            if( incoming.Cross( outgoing ) == 0 && incoming.Dot( outgoing ) > 0 )
+                path.Remove( index );
+        }
+    }
+
     aDragged = draggedPostOpt;
     PNS_DBG( Dbg(), AddItem, &aDragged, GREEN, 0, wxT( "drag-postopt" ) );
 
