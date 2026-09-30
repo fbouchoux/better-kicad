@@ -922,9 +922,13 @@ void DRC_ENGINE::InitEngine( const wxFileName& aRulePath )
 
 
 void DRC_ENGINE::RunTests( EDA_UNITS aUnits, bool aReportAllTrackErrors, bool aTestFootprints,
-                           BOARD_COMMIT* aCommit )
+                           BOARD_COMMIT* aCommit, const std::set<wxString>& aProviders )
 {
     PROF_TIMER timer;
+
+    // Cancelled background snapshots must not spend time regenerating board caches
+    if( IsCancelled() )
+        return;
 
     SetUserUnits( aUnits );
 
@@ -958,6 +962,13 @@ void DRC_ENGINE::RunTests( EDA_UNITS aUnits, bool aReportAllTrackErrors, bool aT
 
     for( const std::unique_ptr<DRC_TEST_PROVIDER>& provider : m_testProviders )
     {
+        // Background callers only need the providers whose violations they display
+        if( !aProviders.empty() && !aProviders.contains( provider->GetName() ) )
+            continue;
+
+        if( IsCancelled() )
+            break;
+
         if( m_logReporter )
             m_logReporter->Report( wxString::Format( wxT( "Run DRC provider: '%s'" ), provider->GetName() ) );
 

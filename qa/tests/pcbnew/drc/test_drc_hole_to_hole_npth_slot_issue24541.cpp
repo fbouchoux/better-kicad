@@ -58,6 +58,7 @@
 #include <drc/drc_item.h>
 #include <drc/drc_engine.h>
 #include <settings/settings_manager.h>
+#include <widgets/progress_reporter_base.h>
 #include <widgets/report_severity.h>
 
 
@@ -154,11 +155,60 @@ BOOST_FIXTURE_TEST_CASE( HoleToHoleNpthSlotIssue24541, DRC_HOLE_TO_HOLE_NPTH_SLO
 
     bds.m_DRCEngine->RunTests( EDA_UNITS::MM, true, false );
 
-    bds.m_DRCEngine->ClearViolationHandler();
-
     BOOST_TEST_MESSAGE( wxString::Format( "Hole-to-hole violations: %d; NPTH slot pairs: %d",
                                           holeToHoleCount, (int) npthSlotPairs.size() ) );
 
-    // The two overlapping NPTH slots must produce exactly one distinct hole-to-hole violation.
+    // The default run must retain the full suite, including the overlapping slot violation
     BOOST_CHECK_EQUAL( npthSlotPairs.size(), 1 );
+
+    const int fullRunCount = holeToHoleCount;
+
+    // Selecting an unrelated provider must avoid running the hole-to-hole test
+    holeToHoleCount = 0;
+    npthSlotPairs.clear();
+    bds.m_DRCEngine->RunTests( EDA_UNITS::MM, true, false, nullptr,
+                             { wxT( "creepage" ) } );
+
+    BOOST_CHECK_EQUAL( holeToHoleCount, 0 );
+    BOOST_CHECK( npthSlotPairs.empty() );
+
+    // Selecting the relevant provider must report the same violations as the full suite
+    bds.m_DRCEngine->RunTests( EDA_UNITS::MM, true, false, nullptr,
+                             { wxT( "hole_to_hole_clearance" ) } );
+
+    BOOST_CHECK_EQUAL( holeToHoleCount, fullRunCount );
+    BOOST_CHECK_EQUAL( npthSlotPairs.size(), 1 );
+
+    // A cancelled background run must not regenerate caches or report violations
+    class CANCELLED_REPORTER : public PROGRESS_REPORTER_BASE
+    {
+    public:
+        /**
+         * Create a progress reporter whose cancellation is already requested.
+         */
+        CANCELLED_REPORTER() : PROGRESS_REPORTER_BASE( 1 )
+        {
+            m_cancelled = true;
+        }
+
+    protected:
+        /**
+         * Keep the cancelled reporter from requesting further work.
+         */
+        bool updateUI() override { return false; }
+    } reporter;
+
+    const int timestamp = m_board->GetTimeStamp();
+    holeToHoleCount = 0;
+    npthSlotPairs.clear();
+    bds.m_DRCEngine->SetProgressReporter( &reporter );
+    bds.m_DRCEngine->RunTests( EDA_UNITS::MM, true, false, nullptr,
+                             { wxT( "hole_to_hole_clearance" ) } );
+    bds.m_DRCEngine->SetProgressReporter( nullptr );
+
+    BOOST_CHECK_EQUAL( m_board->GetTimeStamp(), timestamp );
+    BOOST_CHECK_EQUAL( holeToHoleCount, 0 );
+    BOOST_CHECK( npthSlotPairs.empty() );
+
+    bds.m_DRCEngine->ClearViolationHandler();
 }

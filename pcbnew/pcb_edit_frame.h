@@ -685,6 +685,11 @@ public:
 
     bool CanAcceptApiCommands() override;
 
+    /**
+     * Return whether background UI work must wait for an interactive edit to finish.
+     */
+    bool IsInteractiveOperationInProgress() const { return interactiveOperationInProgress(); }
+
     wxString GetCurrentFileName() const override;
 
     SELECTION& GetCurrentSelection() override;

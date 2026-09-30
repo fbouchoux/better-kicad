@@ -183,6 +183,16 @@ public:
 
     bool HasUserDefinedPhysicalConstraint() override { return m_hasUserPhysicalRules; }
 
+    /**
+     * Report whether this fixture has rules that depend on track geometry.
+     */
+    bool HasGeometryDependentRules() const override { return m_hasGeometryDependentRules; }
+
+    /**
+     * Count temporary cache releases at the router's interaction boundary.
+     */
+    void ClearTemporaryCaches() override { ++m_temporaryCacheClears; }
+
     virtual PNS::NET_HANDLE DpCoupledNet( PNS::NET_HANDLE aNet ) override { return nullptr; }
     virtual int DpNetPolarity( PNS::NET_HANDLE aNet ) override { return -1; }
 
@@ -316,6 +326,8 @@ public:
     int  m_defaultPhysicalClearance = 0;     // 0 means "rule does not match this pair"
     int  m_defaultPhysicalHoleClearance = 0; // 0 means "rule does not match this pair"
     bool m_hasUserPhysicalRules = false;
+    bool m_hasGeometryDependentRules = false;
+    int  m_temporaryCacheClears = 0;
 
 private:
     std::map<ITEM_KEY, PNS::CONSTRAINT> m_ruleMap;
@@ -380,6 +392,59 @@ struct PNS_TEST_FIXTURE
 PNS::RULE_RESOLVER* MOCK_PNS_KICAD_IFACE::GetRuleResolver()
 {
     return &m_testFixture->m_ruleResolver;
+}
+
+
+/**
+ * Routing and dragging must release temporary clearances after every cursor update.
+ */
+BOOST_FIXTURE_TEST_CASE( PNSMoveClearsTemporaryCaches, PNS_TEST_FIXTURE )
+{
+    // Use a simple track to exercise both active routing and dragging through ROUTER::Move
+    PNS::ROUTING_SETTINGS settings( nullptr, "" );
+    PNS::SIZES_SETTINGS sizes;
+    sizes.SetTrackWidth( 200000 );
+    sizes.SetBoardMinTrackWidth( 100000 );
+    m_router->LoadSettings( &settings );
+    m_router->SetMode( PNS::PNS_MODE_ROUTE_SINGLE );
+    m_router->UpdateSizes( sizes );
+    m_router->SyncWorld();
+
+    PNS::NODE* world = m_router->GetWorld();
+    world->SetMaxClearance( 10000000 );
+    world->SetRuleResolver( &m_ruleResolver );
+
+    auto segment = std::make_unique<PNS::SEGMENT>(
+            SEG( VECTOR2I( 0, 0 ), VECTOR2I( 5000000, 0 ) ),
+            reinterpret_cast<PNS::NET_HANDLE>( 1 ) );
+    segment->SetWidth( 200000 );
+    segment->SetLayers( PNS_LAYER_RANGE( F_Cu ) );
+    PNS::SEGMENT* startItem = segment.get();
+    BOOST_REQUIRE( world->Add( std::move( segment ) ) );
+
+    // The active placement branch formerly returned before releasing temporary cache entries
+    BOOST_REQUIRE( m_router->StartRouting( VECTOR2I( 5000000, 0 ), startItem, F_Cu ) );
+    m_ruleResolver.m_temporaryCacheClears = 0;
+
+    for( int step = 1; step <= 3; ++step )
+    {
+        m_router->Move( VECTOR2I( 5000000 + step * 1000000, 0 ), nullptr );
+        BOOST_CHECK_EQUAL( m_ruleResolver.m_temporaryCacheClears, step );
+    }
+
+    m_router->StopRouting();
+
+    // Dragging uses a separate branch and must observe the same cache lifetime
+    BOOST_REQUIRE( m_router->StartDragging( VECTOR2I( 2500000, 0 ), startItem ) );
+    m_ruleResolver.m_temporaryCacheClears = 0;
+
+    for( int step = 1; step <= 3; ++step )
+    {
+        m_router->Move( VECTOR2I( 2500000, step * 1000000 ), nullptr );
+        BOOST_CHECK_EQUAL( m_ruleResolver.m_temporaryCacheClears, step );
+    }
+
+    m_router->StopRouting();
 }
 
 
@@ -1089,6 +1154,65 @@ BOOST_AUTO_TEST_CASE( PNSLineDragArcCollapse )
     line.DragArc( VECTOR2I( 999950, 999950 ), line.CLine().PointCount() / 2 );
 
     BOOST_CHECK_EQUAL( line.CLine().ArcCount(), 0 );
+}
+
+
+/**
+ * Preserve collinear segment boundaries during dragging when pair rules can depend on geometry.
+ */
+BOOST_FIXTURE_TEST_CASE( PNSDragPreservesGeometryDependentRuleBoundaries, PNS_TEST_FIXTURE )
+{
+    // Exercise the direct drag path and the path that also runs the track optimizer
+    for( PNS::PNS_MODE mode : { PNS::RM_MarkObstacles, PNS::RM_Walkaround } )
+    {
+        for( bool geometryDependent : { false, true } )
+        {
+            PNS::ROUTING_SETTINGS settings( nullptr, "" );
+            settings.SetMode( mode );
+            m_router->LoadSettings( &settings );
+            m_ruleResolver.m_hasGeometryDependentRules = geometryDependent;
+
+            PNS::NODE world;
+            world.SetMaxClearance( 10000000 );
+            world.SetRuleResolver( &m_ruleResolver );
+
+            // The middle segment is bounded by two collinear vertices that may separate rules
+            PNS::SEGMENT* middle = nullptr;
+
+            for( int i = 0; i < 3; ++i )
+            {
+                auto segment = std::make_unique<PNS::SEGMENT>(
+                        SEG( VECTOR2I( i * 1000000, 0 ), VECTOR2I( ( i + 1 ) * 1000000, 0 ) ),
+                        reinterpret_cast<PNS::NET_HANDLE>( 1 ) );
+                segment->SetWidth( 100000 );
+                segment->SetLayers( PNS_LAYER_RANGE( F_Cu ) );
+
+                if( i == 1 )
+                    middle = segment.get();
+
+                BOOST_REQUIRE( world.Add( std::move( segment ) ) );
+            }
+
+            PNS::DRAGGER dragger( m_router );
+            dragger.SetWorld( &world );
+            dragger.SetMode( PNS::DM_SEGMENT );
+            PNS::ITEM_SET items;
+            items.Add( middle );
+
+            // A drag at the original position must not erase a potentially meaningful boundary
+            const VECTOR2I cursor( 1500000, 0 );
+            BOOST_REQUIRE( dragger.Start( cursor, items ) );
+            BOOST_REQUIRE( dragger.Drag( cursor ) );
+            const PNS::ITEM_SET traces = dragger.Traces();
+            BOOST_REQUIRE_EQUAL( traces.Size(), 1 );
+            BOOST_REQUIRE( traces[0]->OfKind( PNS::ITEM::LINE_T ) );
+            const PNS::LINE* line = static_cast<const PNS::LINE*>( traces[0] );
+            BOOST_CHECK_EQUAL( line->CLine().Find( VECTOR2I( 1000000, 0 ) ) >= 0,
+                               geometryDependent );
+            BOOST_CHECK_EQUAL( line->CLine().Find( VECTOR2I( 2000000, 0 ) ) >= 0,
+                               geometryDependent );
+        }
+    }
 }
 
 

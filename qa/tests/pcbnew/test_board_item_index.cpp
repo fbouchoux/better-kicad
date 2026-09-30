@@ -24,9 +24,12 @@
 #include <board.h>
 #include <footprint.h>
 #include <pad.h>
+#include <pcb_marker.h>
 #include <pcb_shape.h>
 #include <pcb_table.h>
 #include <pcb_tablecell.h>
+#include <pcb_track.h>
+#include <drc/drc_item.h>
 
 
 BOOST_AUTO_TEST_SUITE( BoardItemIndex )
@@ -276,6 +279,54 @@ BOOST_AUTO_TEST_CASE( FootprintTableCellResolvesByItsOwnId )
     board.ClearItemByIdCache();
 
     BOOST_CHECK_EQUAL( board.ResolveItem( cell->m_Uuid, true ), cell );
+}
+
+
+/**
+ * Removing diagnostic markers evicts their IDs without invalidating board geometry caches.
+ */
+BOOST_AUTO_TEST_CASE( MarkerRemovalPreservesGeometryTimestamp )
+{
+    // Cover individual removals and the bulk path used by online DRC publication
+    for( REMOVE_MODE mode : { REMOVE_MODE::NORMAL, REMOVE_MODE::BULK } )
+    {
+        BOARD board;
+        auto* marker = new PCB_MARKER( DRC_ITEM::Create( DRCE_CLEARANCE ), VECTOR2I( 0, 0 ) );
+        marker->SetOnline( true );
+        board.Add( marker );
+        const KIID markerId = marker->m_Uuid;
+        const int markerTimestamp = board.GetTimeStamp();
+
+        BOOST_REQUIRE_EQUAL( board.Markers().size(), 1 );
+        BOOST_REQUIRE_EQUAL( board.ResolveItem( markerId, true ), marker );
+        BOOST_REQUIRE( board.GetItemByIdCache().contains( markerId ) );
+
+        // Removal must drop both ownership and lookup state even though the timestamp is retained
+        board.Remove( marker, mode );
+        std::unique_ptr<PCB_MARKER> removedMarker( marker );
+        BOOST_CHECK( board.Markers().empty() );
+        BOOST_CHECK( !board.GetItemByIdCache().contains( markerId ) );
+        BOOST_CHECK( board.ResolveItem( markerId, true ) == nullptr );
+        BOOST_CHECK_EQUAL( board.GetTimeStamp(), markerTimestamp );
+
+        // Copper removal still invalidates geometry-dependent caches
+        auto* track = new PCB_TRACK( &board );
+        track->SetStart( VECTOR2I( 0, 0 ) );
+        track->SetEnd( VECTOR2I( 1000000, 0 ) );
+        track->SetWidth( 100000 );
+        track->SetLayer( F_Cu );
+        board.Add( track );
+        const KIID trackId = track->m_Uuid;
+        const int trackTimestamp = board.GetTimeStamp();
+        BOOST_REQUIRE_EQUAL( board.ResolveItem( trackId, true ), track );
+
+        board.Remove( track, mode );
+        std::unique_ptr<PCB_TRACK> removedTrack( track );
+        BOOST_CHECK( board.Tracks().empty() );
+        BOOST_CHECK( !board.GetItemByIdCache().contains( trackId ) );
+        BOOST_CHECK( board.ResolveItem( trackId, true ) == nullptr );
+        BOOST_CHECK_NE( board.GetTimeStamp(), trackTimestamp );
+    }
 }
 
 

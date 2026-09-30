@@ -1615,6 +1615,9 @@ void ROUTER_TOOL::configureViaPlacement( const TOOL_EVENT& aEvent, PCB_LAYER_ID 
 }
 
 
+/**
+ * Select or replace a Smart Via transition without changing placement for an invalid destination.
+ */
 int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
 {
     if( !IsToolActive() )
@@ -1654,44 +1657,17 @@ int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
 
     m_iface->SetBoard( board() );
 
-    TOOL_EVENT placementEvent = aEvent;
-
     // Moving away from a placed Smart Via starts a new track on its destination layer.  That
     // transition is no longer replaceable even if the new track has not been fixed separately.
-    if( m_pendingSmartVia && m_pendingSmartViaPlaced
-            && m_router->Placer()->CurrentEnd() != m_router->Placer()->CurrentStart() )
-        clearPendingSmartVia( false );
+    bool replacing = m_pendingSmartVia
+                     && ( !m_pendingSmartViaPlaced
+                          || m_router->Placer()->CurrentEnd() == m_router->Placer()->CurrentStart() );
+    PCB_LAYER_ID startLayer = replacing
+                                     ? m_pendingSmartViaStart
+                                     : m_iface->GetBoardLayerFromPNSLayer( m_router->GetCurrentLayer() );
+    PCB_LAYER_ID relativeLayer = replacing ? m_pendingSmartViaTarget : startLayer;
 
-    bool replacing = m_pendingSmartVia;
-
-    // Rewind a just-placed transition while its destination track is still empty
-    if( m_pendingSmartVia && m_pendingSmartViaPlaced )
-    {
-        VECTOR2I transitionPosition = m_router->Placer()->CurrentStart();
-
-        m_router->UndoLastSegment();
-        frame()->SetActiveLayer( m_pendingSmartViaStart );
-        getViewControls()->WarpMouseCursor( transitionPosition, true );
-        placementEvent.SetMousePosition( transitionPosition );
-        m_endSnapPoint = transitionPosition;
-    }
-
-    PCB_LAYER_ID startLayer = m_pendingSmartVia
-                                      ? m_pendingSmartViaStart
-                                      : m_iface->GetBoardLayerFromPNSLayer( m_router->GetCurrentLayer() );
-    PCB_LAYER_ID relativeLayer = m_pendingSmartVia ? m_pendingSmartViaTarget : startLayer;
-
-    // Remove the superseded stack metadata before selecting the replacement
-    if( m_pendingSmartViaExpansion && !m_pendingStackedExpansions.empty() )
-    {
-        m_pendingStackedExpansions.pop_back();
-
-        if( m_pendingStackedExpansions.empty() )
-            m_preRouteExpandableVias.clear();
-    }
-
-    m_pendingSmartViaExpansion = false;
-
+    // Resolve the destination before changing the current transition or its stack metadata
     std::vector<PCB_LAYER_ID> layers;
 
     for( PCB_LAYER_ID layer : LAYER_RANGE( F_Cu, B_Cu, board()->GetCopperLayerCount() ) )
@@ -1700,10 +1676,7 @@ int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
     auto current = std::find( layers.begin(), layers.end(), relativeLayer );
 
     if( current == layers.end() )
-    {
-        clearPendingSmartVia( false );
         return 0;
-    }
 
     PCB_LAYER_ID targetLayer = UNDEFINED_LAYER;
 
@@ -1729,10 +1702,40 @@ int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
         break;
     }
 
-    // Leave the placement state unchanged at the edge of the copper stack; stepping never wraps.
+    // Leave the placement state unchanged at the edge of the copper stack; stepping never wraps
     if( targetLayer == UNDEFINED_LAYER )
         return 0;
 
+    // Retain the expansion for a completed transition when starting a separate transition
+    if( m_pendingSmartVia && !replacing )
+        clearPendingSmartVia( false );
+
+    TOOL_EVENT placementEvent = aEvent;
+
+    // Rewind a just-placed transition while its destination track is still empty
+    if( replacing && m_pendingSmartViaPlaced )
+    {
+        VECTOR2I transitionPosition = m_router->Placer()->CurrentStart();
+
+        m_router->UndoLastSegment();
+        frame()->SetActiveLayer( m_pendingSmartViaStart );
+        getViewControls()->WarpMouseCursor( transitionPosition, true );
+        placementEvent.SetMousePosition( transitionPosition );
+        m_endSnapPoint = transitionPosition;
+    }
+
+    // Remove the superseded stack metadata only after a valid destination has been selected
+    if( m_pendingSmartViaExpansion && !m_pendingStackedExpansions.empty() )
+    {
+        m_pendingStackedExpansions.pop_back();
+
+        if( m_pendingStackedExpansions.empty() )
+            m_preRouteExpandableVias.clear();
+    }
+
+    m_pendingSmartViaExpansion = false;
+
+    // Returning to the source layer cancels the replaceable transition
     if( targetLayer == startLayer )
     {
         if( replacing && m_router->IsPlacingVia() )

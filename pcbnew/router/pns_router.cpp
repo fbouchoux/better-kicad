@@ -492,27 +492,36 @@ bool ROUTER::StartRouting( const VECTOR2I& aP, ITEM* aStartItem, int aLayer )
 }
 
 
+/**
+ * Update the route or drag preview and release its temporary clearance results.
+ */
 bool ROUTER::Move( const VECTOR2I& aP, ITEM* endItem )
 {
+    // Keep clearance results available throughout geometry and preview updates
+    bool result = false;
+
     if( m_logger )
         m_logger->Log( LOGGER::EVT_MOVE, aP, endItem );
 
     switch( m_state )
     {
     case ROUTE_TRACK:
-        return movePlacing( aP, endItem );
+        result = movePlacing( aP, endItem );
+        break;
 
     case DRAG_SEGMENT:
     case DRAG_COMPONENT:
-        return moveDragging( aP, endItem );
+        result = moveDragging( aP, endItem );
+        break;
 
     default:
         break;
     }
 
+    // Cursor movement changes temporary geometry, so do not retain it between updates
     GetRuleResolver()->ClearTemporaryCaches();
 
-    return false;
+    return result;
 }
 
 

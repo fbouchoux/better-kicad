@@ -686,7 +686,6 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
                             int accuracy = aCollector.GetGuide()->Accuracy();
                             std::set<EDA_ITEM*> remove;
                             std::vector<PCB_VIA*> vias;
-                            std::vector<VECTOR2I> viaStackPositions;
 
                             for( EDA_ITEM* item : aCollector )
                             {
@@ -711,19 +710,15 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
                                         if( member->Type() == PCB_VIA_T
                                             && member->HitTest( aWhere, accuracy ) )
                                         {
-                                            viaStackPositions.push_back( member->GetPosition() );
+                                            vias.push_back( static_cast<PCB_VIA*>( member ) );
                                         }
                                     }
                                 }
                             }
 
-                            // Prefer vias and microvia stacks over track endpoints connected to
-                            // them.  Keeping all candidate positions allows the normal layer
-                            // heuristics to pick the right hop when several vias are stacked.
+                            // Prefer vias and microvia stacks only over electrically connected
+                            // track endpoints, retaining each hop's net and copper layer span
                             for( PCB_VIA* via : vias )
-                                viaStackPositions.push_back( via->GetPosition() );
-
-                            for( const VECTOR2I& viaPosition : viaStackPositions )
                             {
                                 for( EDA_ITEM* item : aCollector )
                                 {
@@ -732,11 +727,11 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
 
                                     PCB_TRACK* track = static_cast<PCB_TRACK*>( item );
 
-                                    if( track->GetStart() == viaPosition
-                                        || track->GetEnd() == viaPosition )
-                                    {
+                                    if( via->GetNetCode() == track->GetNetCode()
+                                        && via->IsOnLayer( track->GetLayer() )
+                                        && ( track->GetStart() == via->GetPosition()
+                                             || track->GetEnd() == via->GetPosition() ) )
                                         remove.insert( track );
-                                    }
                                 }
                             }
 
@@ -778,8 +773,12 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
                             if( item->Type() == PCB_VIA_T )
                             {
                                 PCB_VIA* via = static_cast<PCB_VIA*>( item );
-                                connected = selectedTrack->GetStart() == via->GetPosition()
-                                            || selectedTrack->GetEnd() == via->GetPosition();
+
+                                // Matching coordinates alone do not establish a connection
+                                connected = via->GetNetCode() == selectedTrack->GetNetCode()
+                                            && via->IsOnLayer( selectedTrack->GetLayer() )
+                                            && ( selectedTrack->GetStart() == via->GetPosition()
+                                                 || selectedTrack->GetEnd() == via->GetPosition() );
                             }
                             else if( PCB_VIA_STACK* stack = dynamic_cast<PCB_VIA_STACK*>( item ) )
                             {

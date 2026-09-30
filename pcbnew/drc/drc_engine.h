@@ -20,6 +20,7 @@
 #pragma once
 
 #include <memory>
+#include <set>
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
@@ -206,10 +207,12 @@ public:
     void InitEngine( const std::shared_ptr<DRC_RULE>& rule );
 
     /**
-     * Run the DRC tests.
+     * Run the DRC tests, optionally restricting execution to named providers.
+     * An empty provider set runs the full suite.
      */
     void RunTests( EDA_UNITS aUnits, bool aReportAllTrackErrors, bool aTestFootprints,
-                   BOARD_COMMIT* aCommit = nullptr );
+                   BOARD_COMMIT* aCommit = nullptr,
+                   const std::set<wxString>& aProviders = {} );
 
     bool IsErrorLimitExceeded( int error_code );
 

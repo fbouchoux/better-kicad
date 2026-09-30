@@ -63,6 +63,7 @@ private:
 
     void attachToBoard( BOARD* aBoard );
     void schedule();
+    bool deferForInteractiveOperation();
     void startRun();
     void runSnapshot( SNAPSHOT aSnapshot, std::shared_ptr<std::atomic_bool> aCancel );
     void applyResult( const std::shared_ptr<RESULT>& aResult );
@@ -87,6 +88,7 @@ private:
     wxTimer                            m_debounceTimer;
     std::jthread                       m_worker;
     std::shared_ptr<std::atomic_bool>  m_cancel;
+    std::shared_ptr<RESULT>             m_pendingResult;
     unsigned long long                 m_generation;
     wxString                           m_lastRulesPath;
     std::time_t                        m_lastRulesTimestamp;

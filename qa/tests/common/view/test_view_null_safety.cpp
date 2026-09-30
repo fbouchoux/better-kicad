@@ -72,4 +72,55 @@ BOOST_AUTO_TEST_CASE( ViewGroupRejectsNullItem )
 }
 
 
+/**
+ * Diagnostic queries may include display-only overlays without making hidden layers hittable.
+ */
+BOOST_AUTO_TEST_CASE( LayerQueryCanOptIntoDisplayOnlyOverlays )
+{
+    // Empty groups cover the view, making both candidates overlap the query rectangle
+    VIEW view;
+    VIEW_GROUP first;
+    VIEW_GROUP second;
+    constexpr int layer = 0;
+    first.SetLayer( layer );
+    second.SetLayer( layer );
+    view.Add( &first );
+    view.Add( &second );
+    view.SetLayerDisplayOnly( layer );
+
+    const BOX2I bounds( VECTOR2I( 0, 0 ), VECTOR2I( 10, 10 ) );
+    int count = 0;
+    auto countItem = [&]( VIEW_ITEM* )
+    {
+        ++count;
+        return true;
+    };
+
+    // Ordinary hit testing must continue to ignore overlays
+    view.Query( layer, bounds, countItem );
+    BOOST_CHECK_EQUAL( count, 0 );
+
+    // Diagnostic hit testing explicitly includes the overlay's spatial index
+    view.Query( layer, bounds, countItem, true );
+    BOOST_CHECK_EQUAL( count, 2 );
+
+    // A tooltip can stop searching after its first hit
+    count = 0;
+    view.Query( layer, bounds,
+                [&]( VIEW_ITEM* )
+                {
+                    ++count;
+                    return false;
+                },
+                true );
+    BOOST_CHECK_EQUAL( count, 1 );
+
+    // The opt-in changes selectability filtering, not layer visibility
+    count = 0;
+    view.SetLayerVisible( layer, false );
+    view.Query( layer, bounds, countItem, true );
+    BOOST_CHECK_EQUAL( count, 0 );
+}
+
+
 BOOST_AUTO_TEST_SUITE_END()

@@ -537,11 +537,12 @@ int VIEW::Query( const BOX2I& aRect, std::vector<LAYER_ITEM_PAIR>& aResult ) con
  * Query visible items in one view layer.
  */
 void VIEW::Query( int aLayer, const BOX2I& aRect,
-                  const std::function<bool( VIEW_ITEM* )>& aFunc ) const
+                  const std::function<bool( VIEW_ITEM* )>& aFunc, bool aIncludeDisplayOnly ) const
 {
     auto layer = m_layers.find( aLayer );
 
-    if( layer == m_layers.end() || layer->second.displayOnly || !layer->second.visible )
+    if( layer == m_layers.end() || !layer->second.visible
+        || ( layer->second.displayOnly && !aIncludeDisplayOnly ) )
         return;
 
     layer->second.items->Query( aRect, aFunc );

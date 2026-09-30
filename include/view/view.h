@@ -125,9 +125,11 @@ public:
      * @param aLayer the layer whose spatial index should be queried.
      * @param aRect the query bounds.
      * @param aFunc the function to execute; return true to continue, false to end the query.
+     * @param aIncludeDisplayOnly allow diagnostic hit testing on non-selectable overlay layers.
      */
     void Query( int aLayer, const BOX2I& aRect,
-                const std::function<bool( VIEW_ITEM* )>& aFunc ) const;
+                const std::function<bool( VIEW_ITEM* )>& aFunc,
+                bool aIncludeDisplayOnly = false ) const;
 
     /**
      * Run a function on all visible items that touch or are within the rectangle \a aRect.

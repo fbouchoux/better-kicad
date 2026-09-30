@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <exception>
 
-#include <board_commit.h>
 #include <board_design_settings.h>
 #include <component_classes/component_class_manager.h>
 #include <drc/drc_engine.h>
@@ -37,6 +36,7 @@
 #include <richio.h>
 #include <tool/tool_manager.h>
 #include <tools/drc_tool.h>
+#include <tools/pcb_selection_tool.h>
 #include <widgets/wx_data_view_hyperlink_renderer.h>
 #include <view/view.h>
 #include <wx/filename.h>
@@ -50,6 +50,7 @@ wxDEFINE_EVENT( EVT_ONLINE_DRC_FINISHED, wxThreadEvent );
 namespace
 {
 constexpr int ONLINE_DRC_DEBOUNCE_MS = 650;
+constexpr int ONLINE_DRC_ACTIVITY_POLL_MS = 200;
 
 
 bool isLiveViolation( int aErrorCode )
@@ -207,6 +208,7 @@ void PANEL_ONLINE_DRC::Suspend()
 
     m_suspended = true;
     m_debounceTimer.Stop();
+    m_pendingResult.reset();
     ++m_generation;
 
     if( m_cancel )
@@ -250,6 +252,7 @@ void PANEL_ONLINE_DRC::schedule()
 
     m_dirty = true;
     ++m_generation;
+    m_pendingResult.reset();
 
     if( m_cancel )
         m_cancel->store( true, std::memory_order_relaxed );
@@ -260,10 +263,46 @@ void PANEL_ONLINE_DRC::schedule()
 }
 
 
+/**
+ * Cancel background computation and defer UI work while an edit is active.
+ */
+bool PANEL_ONLINE_DRC::deferForInteractiveOperation()
+{
+    if( !m_frame->IsInteractiveOperationInProgress() )
+        return false;
+
+    // Invalidate the interrupted snapshot once, then recheck the board after editing ends
+    if( m_running && m_cancel && !m_cancel->exchange( true, std::memory_order_relaxed ) )
+    {
+        m_dirty = true;
+        ++m_generation;
+    }
+
+    return true;
+}
+
+
+/**
+ * Run snapshot and publication work only between interactive operations.
+ */
 void PANEL_ONLINE_DRC::onTimer( wxTimerEvent& )
 {
-    if( m_running || m_suspended || !m_board )
+    if( m_shutdown || m_suspended || !m_board )
         return;
+
+    // Keep polling during a worker run so a newly started edit can cancel it promptly
+    if( deferForInteractiveOperation() || m_running )
+    {
+        m_debounceTimer.StartOnce( ONLINE_DRC_ACTIVITY_POLL_MS );
+        return;
+    }
+
+    // Finished checks can wait here without touching the live board during routing
+    if( m_pendingResult )
+    {
+        std::shared_ptr<RESULT> result = std::move( m_pendingResult );
+        applyResult( result );
+    }
 
     if( m_dirty )
         startRun();
@@ -279,6 +318,15 @@ void PANEL_ONLINE_DRC::startRun()
 {
     if( m_shutdown || m_running || !m_board )
         return;
+
+    // A failed snapshot or worker launch must remain eligible for the next timer retry
+    auto retry = [&]()
+    {
+        m_running = false;
+        m_dirty = true;
+        m_cancel.reset();
+        m_debounceTimer.StartOnce( 1000 );
+    };
 
     try
     {
@@ -341,22 +389,23 @@ void PANEL_ONLINE_DRC::startRun()
                 {
                     runSnapshot( std::move( snapshot ), cancel );
                 } );
+        m_debounceTimer.StartOnce( ONLINE_DRC_ACTIVITY_POLL_MS );
     }
     catch( const IO_ERROR& error )
     {
         m_status->SetLabel( wxString::Format( _( "Online DRC snapshot failed: %s" ), error.What() ) );
-        m_debounceTimer.StartOnce( 1000 );
+        retry();
     }
     catch( const std::exception& error )
     {
         m_status->SetLabel( wxString::Format( _( "Online DRC snapshot failed: %s" ),
                                               wxString::FromUTF8( error.what() ) ) );
-        m_debounceTimer.StartOnce( 1000 );
+        retry();
     }
     catch( ... )
     {
         m_status->SetLabel( _( "Online DRC snapshot failed" ) );
-        m_debounceTimer.StartOnce( 1000 );
+        retry();
     }
 }
 
@@ -367,6 +416,21 @@ void PANEL_ONLINE_DRC::runSnapshot( SNAPSHOT aSnapshot,
     std::shared_ptr<RESULT> result = std::make_shared<RESULT>();
     result->generation = aSnapshot.generation;
 
+    // Every exit must release the UI's running state, including cancellation during setup
+    auto postResult = [&]()
+    {
+        result->cancelled = aCancel->load( std::memory_order_relaxed );
+        wxThreadEvent* event = new wxThreadEvent( EVT_ONLINE_DRC_FINISHED );
+        event->SetPayload( result );
+        wxQueueEvent( this, event );
+    };
+
+    if( aCancel->load( std::memory_order_relaxed ) )
+    {
+        postResult();
+        return;
+    }
+
     try
     {
         PCB_IO_KICAD_SEXPR io;
@@ -374,6 +438,12 @@ void PANEL_ONLINE_DRC::runSnapshot( SNAPSHOT aSnapshot,
         std::unique_ptr<BOARD> board = std::make_unique<BOARD>();
         board->SetFileName( aSnapshot.boardFileName );
         io.DoLoad( reader, *board, true, nullptr, nullptr, 0 );
+
+        if( aCancel->load( std::memory_order_relaxed ) )
+        {
+            postResult();
+            return;
+        }
 
         BOARD_DESIGN_SETTINGS& settings = board->GetDesignSettings();
         settings = *aSnapshot.designSettings;
@@ -383,6 +453,12 @@ void PANEL_ONLINE_DRC::runSnapshot( SNAPSHOT aSnapshot,
         board->GetComponentClassManager().SyncDynamicComponentClassAssignments(
                 aSnapshot.componentClassAssignments, aSnapshot.generateSheetClasses, {} );
         board->GetComponentClassManager().RebuildRequiredCaches();
+
+        if( aCancel->load( std::memory_order_relaxed ) )
+        {
+            postResult();
+            return;
+        }
 
         std::shared_ptr<DRC_ENGINE> engine = std::make_shared<DRC_ENGINE>( board.get(), &settings );
         settings.m_DRCEngine = engine;
@@ -420,7 +496,11 @@ void PANEL_ONLINE_DRC::runSnapshot( SNAPSHOT aSnapshot,
                     result->markers.emplace_back( std::move( marker ) );
                 } );
 
-        engine->RunTests( aSnapshot.units, false, false );
+        // Only run providers that produce the live overlay's violation types
+        engine->RunTests( aSnapshot.units, false, false, nullptr,
+                         { wxT( "clearance" ), wxT( "creepage" ), wxT( "edge_clearance" ),
+                           wxT( "hole_to_hole_clearance" ), wxT( "physical_clearance" ),
+                           wxT( "footprint checks" ) } );
         engine->ClearViolationHandler();
         engine->SetProgressReporter( nullptr );
 
@@ -451,9 +531,7 @@ void PANEL_ONLINE_DRC::runSnapshot( SNAPSHOT aSnapshot,
         result->error = _( "Unknown background DRC error" );
     }
 
-    wxThreadEvent* event = new wxThreadEvent( EVT_ONLINE_DRC_FINISHED );
-    event->SetPayload( result );
-    wxQueueEvent( this, event );
+    postResult();
 }
 
 
@@ -465,6 +543,11 @@ void PANEL_ONLINE_DRC::onRunFinished( wxThreadEvent& aEvent )
         m_worker.join();
 
     m_running = false;
+
+    // Cancellation can arrive after the worker has queued its result
+    if( m_cancel && m_cancel->load( std::memory_order_relaxed ) )
+        result->cancelled = true;
+
     m_cancel.reset();
 
     if( m_shutdown )
@@ -473,10 +556,15 @@ void PANEL_ONLINE_DRC::onRunFinished( wxThreadEvent& aEvent )
     if( !result->error.IsEmpty() && result->generation == m_generation )
         m_status->SetLabel( wxString::Format( _( "Online DRC failed: %s" ), result->error ) );
     else if( !result->cancelled && result->generation == m_generation && !m_suspended )
-        applyResult( result );
+    {
+        if( m_frame->IsInteractiveOperationInProgress() )
+            m_pendingResult = result;
+        else
+            applyResult( result );
+    }
 
     if( m_dirty && !m_suspended )
-        m_debounceTimer.StartOnce( 50 );
+        m_debounceTimer.StartOnce( ONLINE_DRC_DEBOUNCE_MS );
     else if( !m_suspended )
         m_debounceTimer.StartOnce( 1000 );
 }
@@ -490,9 +578,11 @@ void PANEL_ONLINE_DRC::applyResult( const std::shared_ptr<RESULT>& aResult )
     m_applyingResults = true;
     m_canvasTooltip.clear();
     m_frame->GetCanvas()->SetToolTip( wxString() );
-    BOARD_COMMIT commit( m_frame );
+    KIGFX::VIEW*         view = m_frame->GetCanvas()->GetView();
+    PCB_SELECTION_TOOL* selection = m_frame->GetToolManager()->GetTool<PCB_SELECTION_TOOL>();
+    bool                selectionChanged = false;
 
-    std::vector<PCB_MARKER*> oldOnlineMarkers;
+    std::vector<BOARD_ITEM*> oldOnlineMarkers;
 
     for( PCB_MARKER* marker : m_board->Markers() )
     {
@@ -500,16 +590,42 @@ void PANEL_ONLINE_DRC::applyResult( const std::shared_ptr<RESULT>& aResult )
             oldOnlineMarkers.push_back( marker );
     }
 
-    for( PCB_MARKER* marker : oldOnlineMarkers )
-        commit.Remove( marker );
+    // Diagnostic overlays do not edit copper, connectivity, or the undo history
+    for( BOARD_ITEM* marker : oldOnlineMarkers )
+    {
+        if( marker->IsSelected() && selection )
+        {
+            selection->RemoveItemFromSel( marker, true );
+            selectionChanged = true;
+        }
+
+        view->Remove( marker );
+        m_board->Remove( marker, REMOVE_MODE::BULK );
+    }
+
+    // Notify listeners while removed items are still alive
+    if( !oldOnlineMarkers.empty() )
+        m_board->FinalizeBulkRemove( oldOnlineMarkers );
+
+    for( BOARD_ITEM* marker : oldOnlineMarkers )
+        delete marker;
+
+    std::vector<BOARD_ITEM*> newOnlineMarkers;
 
     for( std::unique_ptr<PCB_MARKER>& marker : aResult->markers )
     {
         addTrackHighlights( *marker );
-        commit.Add( marker.release() );
+        m_board->Add( marker.get(), ADD_MODE::BULK_APPEND, true );
+        view->Add( marker.get() );
+        newOnlineMarkers.push_back( marker.release() );
     }
 
-    commit.Push( _( "Online DRC" ), SKIP_UNDO | SKIP_SET_DIRTY );
+    if( !newOnlineMarkers.empty() )
+        m_board->FinalizeBulkAdd( newOnlineMarkers );
+
+    if( selectionChanged )
+        m_frame->GetToolManager()->PostEvent( EVENTS::UnselectedEvent );
+
     m_frame->ResolveDRCExclusions( false );
     m_applyingResults = false;
 
@@ -529,21 +645,30 @@ void PANEL_ONLINE_DRC::onCanvasMotion( wxMouseEvent& aEvent )
     wxString tooltip;
     KIGFX::VIEW* view = m_frame->GetCanvas()->GetView();
 
-    if( m_board && view->IsLayerVisible( LAYER_LIVE_DRC ) )
+    if( !m_shutdown && !m_suspended && !deferForInteractiveOperation()
+        && m_board && view->IsLayerVisible( LAYER_LIVE_DRC ) )
     {
         VECTOR2D world = view->ToWorld( VECTOR2D( aEvent.GetX(), aEvent.GetY() ) );
         VECTOR2I cursor( KiROUND( world.x ), KiROUND( world.y ) );
         int      accuracy = std::max( 1, KiROUND( view->ToWorld( 8.0 ) ) );
 
-        for( PCB_MARKER* marker : m_board->Markers() )
-        {
-            if( marker->IsOnline() && marker->HitTest( cursor, accuracy ) )
-            {
-                tooltip = HYPERLINK_DV_RENDERER::StripMarkup(
-                        marker->GetRCItem()->GetErrorMessage( true ) );
-                break;
-            }
-        }
+        // Query the visible marker layer instead of scanning every violation on every motion
+        BOX2I bounds( cursor, VECTOR2I( 1, 1 ) );
+        bounds.Inflate( accuracy );
+        view->Query( LAYER_LIVE_DRC, bounds,
+                     [&]( KIGFX::VIEW_ITEM* aItem ) -> bool
+                     {
+                         PCB_MARKER* marker = dynamic_cast<PCB_MARKER*>( aItem );
+
+                         if( marker && marker->IsOnline() && marker->HitTest( cursor, accuracy ) )
+                         {
+                             tooltip = HYPERLINK_DV_RENDERER::StripMarkup(
+                                     marker->GetRCItem()->GetErrorMessage( true ) );
+                             return false;
+                         }
+
+                         return true;
+                     }, true );
     }
 
     if( tooltip != m_canvasTooltip )
@@ -667,6 +792,7 @@ void PANEL_ONLINE_DRC::onBoardChanging( wxCommandEvent& aEvent )
     attachToBoard( nullptr );
     ++m_generation;
     m_dirty = false;
+    m_pendingResult.reset();
     m_debounceTimer.Stop();
 
     if( m_cancel )
