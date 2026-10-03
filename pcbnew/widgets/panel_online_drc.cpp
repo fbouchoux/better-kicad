@@ -49,7 +49,7 @@ wxDEFINE_EVENT( EVT_ONLINE_DRC_FINISHED, wxThreadEvent );
 
 namespace
 {
-constexpr int ONLINE_DRC_DEBOUNCE_MS = 650;
+constexpr int ONLINE_DRC_DEBOUNCE_MS = 1500;
 constexpr int ONLINE_DRC_ACTIVITY_POLL_MS = 200;
 
 
@@ -251,6 +251,8 @@ void PANEL_ONLINE_DRC::schedule()
         return;
 
     m_dirty = true;
+    m_idleDeadline = std::chrono::steady_clock::now()
+                     + std::chrono::milliseconds( ONLINE_DRC_DEBOUNCE_MS );
     ++m_generation;
     m_pendingResult.reset();
 
@@ -264,12 +266,18 @@ void PANEL_ONLINE_DRC::schedule()
 
 
 /**
- * Cancel background computation and defer UI work while an edit is active.
+ * Cancel background computation during editing and wait for a full idle interval afterward.
  */
 bool PANEL_ONLINE_DRC::deferForInteractiveOperation()
 {
-    if( !m_frame->IsInteractiveOperationInProgress() )
-        return false;
+    // The current tool may temporarily be selection while an editing tool remains on the
+    // stack.  Also defer while a properties dialog has disabled the editor.
+    if( m_frame->ToolStackIsEmpty() && m_frame->IsEnabled()
+        && !m_frame->IsInteractiveOperationInProgress() )
+        return std::chrono::steady_clock::now() < m_idleDeadline;
+
+    m_idleDeadline = std::chrono::steady_clock::now()
+                     + std::chrono::milliseconds( ONLINE_DRC_DEBOUNCE_MS );
 
     // Invalidate the interrupted snapshot once, then recheck the board after editing ends
     if( m_running && m_cancel && !m_cancel->exchange( true, std::memory_order_relaxed ) )
@@ -316,7 +324,8 @@ void PANEL_ONLINE_DRC::onTimer( wxTimerEvent& )
 
 void PANEL_ONLINE_DRC::startRun()
 {
-    if( m_shutdown || m_running || !m_board )
+    if( m_shutdown || m_suspended || m_running || !m_board
+        || deferForInteractiveOperation() )
         return;
 
     // A failed snapshot or worker launch must remain eligible for the next timer retry
@@ -557,16 +566,13 @@ void PANEL_ONLINE_DRC::onRunFinished( wxThreadEvent& aEvent )
         m_status->SetLabel( wxString::Format( _( "Online DRC failed: %s" ), result->error ) );
     else if( !result->cancelled && result->generation == m_generation && !m_suspended )
     {
-        if( m_frame->IsInteractiveOperationInProgress() )
-            m_pendingResult = result;
-        else
-            applyResult( result );
+        // Publish through the timer's idle guard, just like snapshot creation.  Completion
+        // must not bypass the debounce interval or an editing tool suspended under selection.
+        m_pendingResult = result;
     }
 
-    if( m_dirty && !m_suspended )
-        m_debounceTimer.StartOnce( ONLINE_DRC_DEBOUNCE_MS );
-    else if( !m_suspended )
-        m_debounceTimer.StartOnce( 1000 );
+    if( !m_suspended )
+        m_debounceTimer.StartOnce( ONLINE_DRC_ACTIVITY_POLL_MS );
 }
 
 

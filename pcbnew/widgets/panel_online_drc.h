@@ -12,6 +12,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <ctime>
 #include <memory>
 #include <thread>
@@ -90,6 +91,7 @@ private:
     std::shared_ptr<std::atomic_bool>  m_cancel;
     std::shared_ptr<RESULT>             m_pendingResult;
     unsigned long long                 m_generation;
+    std::chrono::steady_clock::time_point m_idleDeadline;
     wxString                           m_lastRulesPath;
     std::time_t                        m_lastRulesTimestamp;
     bool                               m_dirty;
