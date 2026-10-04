@@ -66,6 +66,7 @@
 #include <wx/log.h>
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <tuple>
 #include <unordered_set>
@@ -689,12 +690,54 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
     }
 
     // Evaluate segments of a multi-segment LINE against a single opposing item.
-    auto evaluateLineSegments = [&]( const PNS::ITEM* aLineItem, BOARD_ITEM* aOpposingItem,
-                                     bool aLineIsFirst, int aIdx ) -> DRC_CONSTRAINT
+    auto evaluateLineSegments = [&]( const PNS::ITEM* aLineItem,
+                                     const PNS::ITEM* aOpposingPnsItem,
+                                     BOARD_ITEM* aOpposingItem, bool aLineIsFirst,
+                                     int aIdx ) -> DRC_CONSTRAINT
     {
         DRC_CONSTRAINT bestConstraint;
         const auto* line = static_cast<const PNS::LINE*>( aLineItem );
         const SHAPE_LINE_CHAIN& chain = line->CLine();
+
+        // Whole-line callers need the worst clearance only where this particular opposing item
+        // can interact with the line.  Without this locality filter, a rule applying to a remote
+        // segment can enlarge the obstacle hull back at the other end of the route.
+        BOX2I relevantBBox;
+        BOX2I opposingBBox;
+        bool  localizeToOpposingItem = false;
+        int   nearestSegment = -1;
+
+        if( useWorstCaseClearance && aOpposingPnsItem )
+        {
+            if( const SHAPE* opposingShape = aOpposingPnsItem->Shape( aPNSLayer ) )
+            {
+                opposingBBox = opposingShape->BBox();
+                relevantBBox = opposingBBox;
+
+                int maxClearance = std::max( m_board->GetMaxClearanceValue(),
+                                             m_board->m_DRCMaxClearance );
+                relevantBBox.Inflate( maxClearance + line->Width() / 2 );
+                localizeToOpposingItem = true;
+
+                ecoord nearestDistance = std::numeric_limits<ecoord>::max();
+
+                for( int i = 0; i < chain.SegmentCount(); i++ )
+                {
+                    BOX2I segmentBBox;
+                    segmentBBox.SetOrigin( chain.CPoint( i ) );
+                    segmentBBox.SetEnd( chain.CPoint( i + 1 ) );
+                    segmentBBox.Normalize();
+
+                    ecoord distance = opposingBBox.SquaredDistance( segmentBBox );
+
+                    if( distance < nearestDistance )
+                    {
+                        nearestDistance = distance;
+                        nearestSegment = i;
+                    }
+                }
+            }
+        }
 
         PCB_TRACK& dummyTrack = m_dummyTracks[aIdx];
         dummyTrack.SetLayer( board_layer );
@@ -703,6 +746,17 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
 
         for( int i = 0; i < chain.SegmentCount(); i++ )
         {
+            if( localizeToOpposingItem && i != nearestSegment )
+            {
+                BOX2I segmentBBox;
+                segmentBBox.SetOrigin( chain.CPoint( i ) );
+                segmentBBox.SetEnd( chain.CPoint( i + 1 ) );
+                segmentBBox.Normalize();
+
+                if( !relevantBBox.Intersects( segmentBBox ) )
+                    continue;
+            }
+
             dummyTrack.SetStart( chain.CPoint( i ) );
             dummyTrack.SetEnd( chain.CPoint( i + 1 ) );
 
@@ -727,7 +781,10 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
 
         const auto* lineA = static_cast<const PNS::LINE*>( aItemA );
         const auto* lineB = static_cast<const PNS::LINE*>( aItemB );
-        const int proximityThreshold = std::max( lineA->Width(), lineB->Width() ) * 2;
+        const int proximityThreshold = useWorstCaseClearance
+                ? std::max( m_board->GetMaxClearanceValue(), m_board->m_DRCMaxClearance )
+                          + ( lineA->Width() + lineB->Width() ) / 2
+                : std::max( lineA->Width(), lineB->Width() ) * 2;
 
         BOX2I bboxA = lineA->CLine().BBox();
         bboxA.Inflate( proximityThreshold );
@@ -754,7 +811,10 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
             const SHAPE_LINE_CHAIN& chainA = lineA->CLine();
             const SHAPE_LINE_CHAIN& chainB = lineB->CLine();
 
-            const int proximityThreshold = std::max( lineA->Width(), lineB->Width() ) * 2;
+            const int proximityThreshold = useWorstCaseClearance
+                    ? std::max( m_board->GetMaxClearanceValue(), m_board->m_DRCMaxClearance )
+                              + ( lineA->Width() + lineB->Width() ) / 2
+                    : std::max( lineA->Width(), lineB->Width() ) * 2;
 
             PCB_TRACK& dummyA = m_dummyTracks[0];
             dummyA.SetLayer( board_layer );
@@ -812,11 +872,11 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
         }
         else if( lineANeedsSegmentEval )
         {
-            hostConstraint = evaluateLineSegments( aItemA, parentB, true, 0 );
+            hostConstraint = evaluateLineSegments( aItemA, aItemB, parentB, true, 0 );
         }
         else
         {
-            hostConstraint = evaluateLineSegments( aItemB, parentA, false, 1 );
+            hostConstraint = evaluateLineSegments( aItemB, aItemA, parentA, false, 1 );
         }
     }
     else
