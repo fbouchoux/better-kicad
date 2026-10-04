@@ -44,6 +44,7 @@ set( PCBNEW_PNS_SRCS
     pns_mouse_trail_tracer.cpp
     pns_node.cpp
     pns_optimizer.cpp
+    pns_performance_trace.cpp
     pns_router.cpp
     pns_routing_settings.cpp
     pns_shove.cpp
@@ -85,6 +86,7 @@ set( PCBNEW_PNS_QA_SRCS
     pns_mouse_trail_tracer.cpp
     pns_node.cpp
     pns_optimizer.cpp
+    pns_performance_trace.cpp
     pns_router.cpp
     pns_routing_settings.cpp
     pns_shove.cpp

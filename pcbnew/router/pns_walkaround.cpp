@@ -19,15 +19,18 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 
 #include <advanced_config.h>
+#include <board_item.h>
 #include <core/typeinfo.h>
 #include <geometry/shape_line_chain.h>
 
 #include "pns_walkaround.h"
 #include "pns_optimizer.h"
+#include "pns_performance_trace.h"
 #include "pns_router.h"
 #include "pns_debug_decorator.h"
 #include "pns_solid.h"
@@ -147,6 +150,13 @@ bool WALKAROUND::singleStep()
         int clusterMargin = 2 * obstacle->m_clearance + line.Width() ;
 
         pendingClusters[ i ] = topo.AssembleCluster( obstacle->m_item, line.Layer(), 0.0, line.Net(), clusterMargin );
+        BOARD_ITEM* parent = obstacle->m_item->Parent();
+        PERFORMANCE_TRACE::RecordWalkObstacle( m_iteration, i, obstacle->m_item,
+                                                static_cast<int>( obstacle->m_item->Kind() ),
+                                                parent ? static_cast<int>( parent->Type() ) : -1,
+                                                obstacle->m_clearance,
+                                                static_cast<int>( pendingClusters[i].m_items.size() ),
+                                                line.SegmentCount(), obstacle->m_pos );
         PNS_DBG( Dbg(), AddItem, obstacle->m_item, BLUE, 10000, wxString::Format( "col-item owner-depth %d cl-items=%d cl-margin=%d", static_cast<const NODE*>( obstacle->m_item->Owner() )->Depth(), (int) pendingClusters[i].m_items.size(), clusterMargin ) );
 
     }
@@ -330,6 +340,7 @@ bool WALKAROUND::singleStep()
 
 const WALKAROUND::RESULT WALKAROUND::Route( const LINE& aInitialPath )
 {
+    PERFORMANCE_TRACE::CLOCK::time_point phaseStart = PERFORMANCE_TRACE::CLOCK::now();
     RESULT result;
 
     m_initialLength = aInitialPath.CLine().Length();
@@ -418,6 +429,12 @@ const WALKAROUND::RESULT WALKAROUND::Route( const LINE& aInitialPath )
     }
 
 
+    int maxSegments = 0;
+
+    for( int pol = 0; pol < MaxWalkPolicies; pol++ )
+        maxSegments = std::max( maxSegments, m_currentResult.lines[pol].SegmentCount() );
+
+    PERFORMANCE_TRACE::RecordPhase( "walkaround", phaseStart, m_iteration, maxSegments );
     return m_currentResult;
 }
 

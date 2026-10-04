@@ -53,6 +53,7 @@
 #include "pns_meander_placer.h"
 #include "pns_meander_skew_placer.h"
 #include "pns_dp_meander_placer.h"
+#include "pns_performance_trace.h"
 #include "pns_utils.h"
 #include "router_preview_item.h"
 
@@ -500,6 +501,9 @@ bool ROUTER::StartRouting( const VECTOR2I& aP, ITEM* aStartItem, int aLayer )
  */
 bool ROUTER::Move( const VECTOR2I& aP, ITEM* endItem )
 {
+    PERFORMANCE_TRACE::CLOCK::time_point traceStart = PERFORMANCE_TRACE::CLOCK::now();
+    uint64_t traceMove = PERFORMANCE_TRACE::BeginMove( aP, static_cast<int>( m_state ) );
+
     // Keep clearance results available throughout geometry and preview updates
     bool result = false;
 
@@ -523,6 +527,8 @@ bool ROUTER::Move( const VECTOR2I& aP, ITEM* endItem )
 
     // Cursor movement changes temporary geometry, so do not retain it between updates
     GetRuleResolver()->ClearTemporaryCaches();
+
+    PERFORMANCE_TRACE::EndMove( traceMove, traceStart, result );
 
     return result;
 }
@@ -803,9 +809,15 @@ bool ROUTER::movePlacing( const VECTOR2I& aP, ITEM* aEndItem )
 {
     m_iface->EraseView();
 
+    PERFORMANCE_TRACE::CLOCK::time_point phaseStart = PERFORMANCE_TRACE::CLOCK::now();
     bool ret = m_placer->Move( aP, aEndItem );
-    ITEM_SET current = m_placer->Traces();
+    PERFORMANCE_TRACE::RecordPhase( "placer_move", phaseStart );
 
+    phaseStart = PERFORMANCE_TRACE::CLOCK::now();
+    ITEM_SET current = m_placer->Traces();
+    PERFORMANCE_TRACE::RecordPhase( "build_traces", phaseStart, current.Size() );
+
+    phaseStart = PERFORMANCE_TRACE::CLOCK::now();
     for( const ITEM* item : current.CItems() )
     {
         if( !item->OfKind( ITEM::LINE_T ) )
@@ -834,10 +846,13 @@ bool ROUTER::movePlacing( const VECTOR2I& aP, ITEM* aEndItem )
             m_iface->DisplayItem( &l->Via(), clearance, false, PNS_HEAD_TRACE );
         }
     }
+    PERFORMANCE_TRACE::RecordPhase( "display_head", phaseStart );
 
     //ITEM_SET tmp( &current );
 
+    phaseStart = PERFORMANCE_TRACE::CLOCK::now();
     updateView( m_placer->CurrentNode( true ), current );
+    PERFORMANCE_TRACE::RecordPhase( "update_view", phaseStart );
 
     return ret;
 }

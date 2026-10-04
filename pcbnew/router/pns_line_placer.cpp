@@ -30,6 +30,7 @@
 #include "pns_debug_decorator.h"
 #include "pns_line_placer.h"
 #include "pns_node.h"
+#include "pns_performance_trace.h"
 #include "pns_router.h"
 #include "pns_shove.h"
 #include "pns_solid.h"
@@ -1422,6 +1423,7 @@ void LINE_PLACER::initPlacement()
 
 bool LINE_PLACER::Move( const VECTOR2I& aP, ITEM* aEndItem )
 {
+    PERFORMANCE_TRACE::CLOCK::time_point phaseStart = PERFORMANCE_TRACE::CLOCK::now();
     LINE current;
     int  eiDepth = -1;
 
@@ -1437,6 +1439,7 @@ bool LINE_PLACER::Move( const VECTOR2I& aP, ITEM* aEndItem )
     m_endItem = aEndItem;
 
     bool reachesEnd = route( aP );
+    PERFORMANCE_TRACE::RecordPhase( "line_placer_route", phaseStart, reachesEnd );
 
     // When the user enables via placement (e.g. pressing 'V') and the cursor has not moved
     // from the routing start, the pushout-force algorithm in buildInitialLine cannot resolve

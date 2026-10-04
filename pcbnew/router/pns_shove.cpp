@@ -36,6 +36,7 @@
 #include "pns_shove.h"
 #include "pns_solid.h"
 #include "pns_optimizer.h"
+#include "pns_performance_trace.h"
 #include "pns_via.h"
 #include "pns_utils.h"
 #include "pns_router.h"
@@ -2399,6 +2400,7 @@ bool SHOVE::preShoveCleanup( LINE* aOld, LINE* aNew )
 // new algo
 SHOVE::SHOVE_STATUS SHOVE::Run()
 {
+    PERFORMANCE_TRACE::CLOCK::time_point phaseStart = PERFORMANCE_TRACE::CLOCK::now();
     SHOVE_STATUS st = SH_OK;
 
     m_multiLineMode = false;
@@ -2604,6 +2606,7 @@ SHOVE::SHOVE_STATUS SHOVE::Run()
         m_currentNode = parent;
     }
 
+    PERFORMANCE_TRACE::RecordPhase( "shove", phaseStart, m_iter, static_cast<int>( st ) );
     return st;
 }
 

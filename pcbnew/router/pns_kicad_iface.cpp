@@ -83,6 +83,7 @@
 #include "pns_solid.h"
 #include "pns_segment.h"
 #include "pns_node.h"
+#include "pns_performance_trace.h"
 #include "pns_router.h"
 #include "pns_debug_decorator.h"
 #include "pns_diff_pair.h"
@@ -593,6 +594,10 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
                                                 const PNS::ITEM* aItemA, const PNS::ITEM* aItemB,
                                                 int aPNSLayer, PNS::CONSTRAINT* aConstraint )
 {
+    PNS::PERFORMANCE_TRACE::CLOCK::time_point traceStart = PNS::PERFORMANCE_TRACE::CLOCK::now();
+    int traceEvalCalls = 0;
+    int traceSegmentEvals = 0;
+
     std::shared_ptr<DRC_ENGINE> drcEngine = m_board->GetDesignSettings().m_DRCEngine;
 
     if( !drcEngine )
@@ -620,6 +625,8 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
 
     BOARD_ITEM*    parentA = aItemA ? aItemA->BoardItem() : nullptr;
     BOARD_ITEM*    parentB = aItemB ? aItemB->BoardItem() : nullptr;
+    int             traceParentTypeA = parentA ? static_cast<int>( parentA->Type() ) : -1;
+    int             traceParentTypeB = parentB ? static_cast<int>( parentB->Type() ) : -1;
     PCB_LAYER_ID   board_layer = m_routerIface->GetBoardLayerFromPNSLayer( aPNSLayer );
     DRC_CONSTRAINT hostConstraint;
 
@@ -685,6 +692,8 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
             DRC_CONSTRAINT segConstraint = aLineIsFirst
                 ? drcEngine->EvalRules( hostType, &dummyTrack, aOpposingItem, board_layer )
                 : drcEngine->EvalRules( hostType, aOpposingItem, &dummyTrack, board_layer );
+            traceEvalCalls++;
+            traceSegmentEvals++;
 
             if( pickSmallerConstraint( bestConstraint, segConstraint ) )
                 break;
@@ -773,6 +782,8 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
 
                     DRC_CONSTRAINT segConstraint =
                             drcEngine->EvalRules( hostType, &dummyA, &dummyB, board_layer );
+                    traceEvalCalls++;
+                    traceSegmentEvals++;
 
                     if( pickSmallerConstraint( hostConstraint, segConstraint ) )
                     {
@@ -801,8 +812,18 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
             parentB = getBoardItem( aItemB, board_layer, 1 );
 
         if( parentA )
+        {
             hostConstraint = drcEngine->EvalRules( hostType, parentA, parentB, board_layer );
+            traceEvalCalls++;
+        }
     }
+
+    PNS::PERFORMANCE_TRACE::RecordConstraint( static_cast<int>( aType ), traceEvalCalls,
+                                              traceSegmentEvals, traceStart,
+                                              hostConstraint.GetName(), static_cast<int>( board_layer ),
+                                              aItemA ? static_cast<int>( aItemA->Kind() ) : 0,
+                                              aItemB ? static_cast<int>( aItemB->Kind() ) : 0,
+                                              traceParentTypeA, traceParentTypeB );
 
     if( hostConstraint.IsNull() )
         return false;
@@ -930,6 +951,8 @@ bool PNS_PCBNEW_RULE_RESOLVER::HasGeometryDependentRules() const
 int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* aB,
                                          bool aUseClearanceEpsilon )
 {
+    PNS::PERFORMANCE_TRACE::CLOCK::time_point traceStart = PNS::PERFORMANCE_TRACE::CLOCK::now();
+
     // Temporary segments at different positions can resolve to different geometry-based rules
     const bool                  bothOwned = aA && aB && aA->Owner() && aB->Owner();
     std::shared_ptr<DRC_ENGINE> drcEngine = m_board->GetDesignSettings().m_DRCEngine;
@@ -947,7 +970,10 @@ int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* a
         auto it = m_clearanceCache.find( CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon ) );
 
         if( it != m_clearanceCache.end() )
+        {
+            PNS::PERFORMANCE_TRACE::RecordClearance( "board", traceStart );
             return it->second;
+        }
     }
     else if( aA && aB && cacheTemporary )
     {
@@ -956,7 +982,10 @@ int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* a
                 TEMP_CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon, geometryDependent ) );
 
         if( it != m_tempClearanceCache.end() )
+        {
+            PNS::PERFORMANCE_TRACE::RecordClearance( "temporary", traceStart );
             return it->second;
+        }
     }
 
     PNS::CONSTRAINT constraint;
@@ -1054,6 +1083,8 @@ int PNS_PCBNEW_RULE_RESOLVER::Clearance( const PNS::ITEM* aA, const PNS::ITEM* a
     else if( cacheTemporary )
         m_tempClearanceCache[
                 TEMP_CLEARANCE_CACHE_KEY( aA, aB, aUseClearanceEpsilon, geometryDependent )] = rv;
+
+    PNS::PERFORMANCE_TRACE::RecordClearance( "miss", traceStart );
 
     return rv;
 }
