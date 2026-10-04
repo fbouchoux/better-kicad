@@ -289,6 +289,11 @@ public:
 
     bool HasGeometryDependentRules() const { return m_hasGeometryDependentRules; }
 
+    bool HasGeometryDependentRules( DRC_CONSTRAINT_T aType ) const
+    {
+        return m_geometryDependentConstraints.count( aType ) != 0;
+    }
+
     bool GetReportAllTrackErrors() const { return m_reportAllTrackErrors; }
     bool GetTestFootprints() const { return m_testFootprints; }
 
@@ -419,6 +424,7 @@ protected:
     mutable std::shared_mutex m_clearanceCacheMutex;
     bool m_hasExplicitClearanceRules = false;
     bool m_hasGeometryDependentRules = false;
+    std::set<DRC_CONSTRAINT_T> m_geometryDependentConstraints;
     bool m_hasDiffPairClearanceOverrides = false;
     std::map<DRC_CONSTRAINT_T, std::vector<DRC_ENGINE_CONSTRAINT*>> m_explicitConstraints;
 };

@@ -131,7 +131,7 @@ namespace std
 
 // Identifies a pair of items for the temporary clearance cache by their rule-relevant properties
 // instead of their memory address. Geometry is also included for temporary segments when the
-// board has position-dependent rules.
+// board has position-dependent rules. Straight multi-segment lines include every vertex.
 struct TEMP_CLEARANCE_CACHE_KEY
 {
     struct SIDE
@@ -145,11 +145,12 @@ struct TEMP_CLEARANCE_CACHE_KEY
         bool        hasGeometry;
         SEG         geometry;
         int         width;
+        std::vector<VECTOR2I> lineGeometry;
 
         auto values() const
         {
             return std::tie( boardItem, net, layerStart, layerEnd, kind, freePad, hasGeometry,
-                             geometry, width );
+                             geometry, width, lineGeometry );
         }
 
         bool operator==( const SIDE& o ) const
@@ -172,11 +173,13 @@ struct TEMP_CLEARANCE_CACHE_KEY
      */
     static bool canCacheGeometry( const PNS::ITEM* aItem )
     {
-        return aItem->BoardItem() || aItem->Kind() == PNS::ITEM::SEGMENT_T;
+        return aItem->BoardItem() || aItem->Kind() == PNS::ITEM::SEGMENT_T
+               || ( aItem->Kind() == PNS::ITEM::LINE_T
+                    && static_cast<const PNS::LINE*>( aItem )->CLine().ArcCount() == 0 );
     }
 
     /**
-     * Build one side of the key, including exact temporary segment geometry when needed
+     * Build one side of the key, including exact temporary track geometry when needed
      */
     static SIDE makeSide( const PNS::ITEM* aItem, bool aIncludeGeometry )
     {
@@ -188,11 +191,21 @@ struct TEMP_CLEARANCE_CACHE_KEY
                    aItem->IsFreePad(),
                    false,
                    SEG(),
-                   0 };
+                   0,
+                   {} };
 
         // Board items have stable geometry identified by their pointer
         if( !aIncludeGeometry || side.boardItem )
             return side;
+
+        if( aItem->Kind() == PNS::ITEM::LINE_T )
+        {
+            const PNS::LINE* line = static_cast<const PNS::LINE*>( aItem );
+            side.hasGeometry = true;
+            side.lineGeometry = line->CLine().CPoints();
+            side.width = line->Width();
+            return side;
+        }
 
         // Collision queries decompose temporary lines into straight segments
         const PNS::SEGMENT* segment = static_cast<const PNS::SEGMENT*>( aItem );
@@ -248,6 +261,9 @@ struct hash<TEMP_CLEARANCE_CACHE_KEY>
                           hash<int>()( s->geometry.A.x ), hash<int>()( s->geometry.A.y ),
                           hash<int>()( s->geometry.B.x ), hash<int>()( s->geometry.B.y ),
                           hash<int>()( s->width ) );
+
+            for( const VECTOR2I& point : s->lineGeometry )
+                hash_combine( retval, hash<int>()( point.x ), hash<int>()( point.y ) );
         }
 
         hash_combine( retval, hash<bool>()( k.Flag ) );
@@ -642,7 +658,7 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
     bool lineANeedsSegmentEval = false;
     bool lineBNeedsSegmentEval = false;
 
-    if( drcEngine->HasGeometryDependentRules() )
+    if( drcEngine->HasGeometryDependentRules( hostType ) )
     {
         lineANeedsSegmentEval = isMultiSegmentLine( aItemA, parentA );
         lineBNeedsSegmentEval = isMultiSegmentLine( aItemB, parentB );

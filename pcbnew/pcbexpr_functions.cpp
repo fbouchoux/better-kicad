@@ -841,7 +841,7 @@ class TRANSIENT_TRACK_AREA_CACHE
 {
 public:
     /**
-     * Look up an enclosedByArea result for exact temporary track geometry.
+     * Look up an area predicate result for exact temporary track geometry.
      */
     bool Get( const TRANSIENT_TRACK_AREA_CACHE_KEY& aKey, bool& aResult ) const
     {
@@ -858,7 +858,7 @@ public:
     }
 
     /**
-     * Store an enclosedByArea result in the bounded per-thread cache.
+     * Store an area predicate result in the bounded per-thread cache.
      */
     void Set( const TRANSIENT_TRACK_AREA_CACHE_KEY& aKey, bool aResult )
     {
@@ -894,7 +894,7 @@ TRANSIENT_TRACK_AREA_CACHE_KEY makeTransientTrackAreaCacheKey( const PCB_TRACK* 
     VECTOR2I start = aTrack->GetStart();
     VECTOR2I end = aTrack->GetEnd();
 
-    // Segment direction does not affect area enclosure
+    // Segment direction does not affect area predicates
     if( end < start )
         std::swap( start, end );
 
@@ -940,6 +940,28 @@ static void doIntersectsAreaFunc( LIBEVAL::CONTEXT* aCtx, void* self, bool aForK
                 PCB_LAYER_ID   aLayer = context->GetLayer();
                 bool           transient = ( item->GetFlags() & ROUTER_TRANSIENT ) != 0;
                 const wxString selector = arg->AsString();
+
+                // Intersection and enclosure are both queried repeatedly for the same moving
+                // segment against different obstacles.  Keep separate caches for intersection
+                // and keepout predicates, whose results can differ for the same geometry.
+                thread_local TRANSIENT_TRACK_AREA_CACHE transientAreaCache;
+                thread_local TRANSIENT_TRACK_AREA_CACHE transientKeepoutCache;
+                auto& transientCache = aForKeepout ? transientKeepoutCache : transientAreaCache;
+                TRANSIENT_TRACK_AREA_CACHE_KEY transientKey{};
+                bool cacheTransient = transient && item->Type() == PCB_TRACE_T
+                                      && !( item->GetFlags() & HOLE_PROXY )
+                                      && selector != wxT( "A" ) && selector != wxT( "B" );
+                bool cachedIntersection = false;
+
+                if( cacheTransient )
+                {
+                    transientKey = makeTransientTrackAreaCacheKey( static_cast<PCB_TRACK*>( item ),
+                                                                   selector, aLayer,
+                                                                   context->GetConstraint() );
+
+                    if( transientCache.Get( transientKey, cachedIntersection ) )
+                        return cachedIntersection ? 1.0 : 0.0;
+                }
 
                 auto&          resultsCache = aForKeepout ? board->m_IntersectsKeepoutResultCache
                                                           : board->m_IntersectsAreaResultCache;
@@ -1033,6 +1055,9 @@ static void doIntersectsAreaFunc( LIBEVAL::CONTEXT* aCtx, void* self, bool aForK
 
                 if( memoize )
                     resultsCache.Set( { item, selector, aLayer, context->GetConstraint() }, res );
+
+                if( cacheTransient )
+                    transientCache.Set( transientKey, res );
 
                 return res ? 1.0 : 0.0;
             } );
