@@ -630,24 +630,41 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
     PCB_LAYER_ID   board_layer = m_routerIface->GetBoardLayerFromPNSLayer( aPNSLayer );
     DRC_CONSTRAINT hostConstraint;
 
-    // For clearance-type constraints, pick the smaller (more permissive) value.
-    // Returns true if we found a zero/negative clearance (can't get more permissive).
-    auto pickSmallerConstraint = []( DRC_CONSTRAINT& aBest, const DRC_CONSTRAINT& aCandidate ) -> bool
+    const bool useWorstCaseClearance =
+            hostType == CLEARANCE_CONSTRAINT
+            || hostType == HOLE_CLEARANCE_CONSTRAINT
+            || hostType == EDGE_CLEARANCE_CONSTRAINT
+            || hostType == HOLE_TO_HOLE_CONSTRAINT
+            || hostType == PHYSICAL_CLEARANCE_CONSTRAINT
+            || hostType == PHYSICAL_HOLE_CLEARANCE_CONSTRAINT;
+
+    // A multi-segment line may cross areas governed by different rules.  Clearance users such
+    // as the walkaround router need a single value for the whole line, so use the largest value
+    // to keep their hulls consistent with the per-segment collision checks.  Preserve the
+    // existing, more permissive selection for other constraint types.
+    auto pickSegmentConstraint = [useWorstCaseClearance]( DRC_CONSTRAINT& aBest,
+                                                           const DRC_CONSTRAINT& aCandidate ) -> bool
     {
         if( aCandidate.IsNull() )
             return false;
 
         if( aBest.IsNull() )
-        {
             aBest = aCandidate;
-        }
-        else if( aCandidate.m_Value.HasMin() && aBest.m_Value.HasMin()
-                 && aCandidate.m_Value.Min() < aBest.m_Value.Min() )
+
+        if( aCandidate.m_Value.HasMin() )
         {
-            aBest = aCandidate;
+            if( !aBest.m_Value.HasMin()
+                || ( useWorstCaseClearance
+                     && aCandidate.m_Value.Min() > aBest.m_Value.Min() )
+                || ( !useWorstCaseClearance
+                     && aCandidate.m_Value.Min() < aBest.m_Value.Min() ) )
+            {
+                aBest = aCandidate;
+            }
         }
 
-        return aBest.m_Value.HasMin() && aBest.m_Value.Min() <= 0;
+        return !useWorstCaseClearance && aBest.m_Value.HasMin()
+               && aBest.m_Value.Min() <= 0;
     };
 
     // Check for multi-segment LINEs without BoardItems. These need segment-by-segment
@@ -695,7 +712,7 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
             traceEvalCalls++;
             traceSegmentEvals++;
 
-            if( pickSmallerConstraint( bestConstraint, segConstraint ) )
+            if( pickSegmentConstraint( bestConstraint, segConstraint ) )
                 break;
         }
 
@@ -785,7 +802,7 @@ bool PNS_PCBNEW_RULE_RESOLVER::QueryConstraint( PNS::CONSTRAINT_TYPE aType,
                     traceEvalCalls++;
                     traceSegmentEvals++;
 
-                    if( pickSmallerConstraint( hostConstraint, segConstraint ) )
+                    if( pickSegmentConstraint( hostConstraint, segConstraint ) )
                     {
                         done = true;
                         break;
