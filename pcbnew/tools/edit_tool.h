@@ -170,7 +170,7 @@ public:
     void DeleteItems( const PCB_SELECTION& aItem, bool aIsCut );
 
     /**
-     * Duplicate the current selection and starts a move action.
+     * Duplicate the current selection, then move it or mirror it across a sheet axis.
      */
     int Duplicate( const TOOL_EVENT& aItem );
 

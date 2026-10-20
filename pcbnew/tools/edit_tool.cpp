@@ -181,7 +181,7 @@ static bool selectionCanMoveToLayer( const SELECTION& aSelection )
 // Types with no Mirror() override, which would fall through to the warning-dialog
 // BOARD_ITEM::Mirror. Free pads are handled specially by the tool but not by PCB_GROUP::Mirror.
 static const std::vector<KICAD_T> nonMirrorableTypes = {
-    PCB_FOOTPRINT_T, PCB_PAD_T, PCB_TARGET_T,
+    PCB_FOOTPRINT_T, PCB_PAD_T, PCB_TARGET_T, PCB_POINT_T,
 };
 
 
@@ -219,6 +219,29 @@ static bool selectionMirrorable( const SELECTION& aSelection )
     }
 
     return false;
+}
+
+
+static bool canDuplicateMirrorItem( const BOARD_ITEM* aItem, bool aIsBoardEditor )
+{
+    if( !aItem->IsType( EDIT_TOOL::MirrorableItems )
+        || aItem->Type() == PCB_FIELD_T || aItem->Type() == PCB_DRILL_CHART_T
+        || aItem->Type() == PCB_POINT_T )
+        return false;
+
+    if( aIsBoardEditor && aItem->GetParentFootprint() )
+        return false;
+
+    if( aItem->Type() == PCB_GROUP_T || aItem->Type() == PCB_GENERATOR_T )
+    {
+        if( !groupMirrorable( static_cast<const PCB_GROUP*>( aItem ) ) )
+            return false;
+    }
+
+    if( aItem->Type() == PCB_GENERATOR_T )
+        return static_cast<const PCB_GENERATOR*>( aItem )->CanDuplicate();
+
+    return true;
 }
 
 
@@ -262,6 +285,29 @@ static std::shared_ptr<CONDITIONAL_MENU> makeMirrorRotateMenu( EDIT_TOOL* aEditT
     menu->AddItem( PCB_ACTIONS::rotateCw, SELECTION_CONDITIONS::NotEmpty );
     menu->AddItem( PCB_ACTIONS::mirrorH, canMirror );
     menu->AddItem( PCB_ACTIONS::mirrorV, canMirror );
+
+    auto canDuplicateMirror =
+            [isBoardEditor]( const SELECTION& aSelection )
+            {
+                for( EDA_ITEM* item : aSelection )
+                {
+                    if( item->IsMoving() )
+                        return false;
+                }
+
+                for( EDA_ITEM* item : aSelection )
+                {
+                    if( item->IsBOARD_ITEM()
+                        && canDuplicateMirrorItem( static_cast<BOARD_ITEM*>( item ), isBoardEditor ) )
+                        return true;
+                }
+
+                return false;
+            };
+
+    menu->AddSeparator();
+    menu->AddItem( PCB_ACTIONS::duplicateMirrorH, canDuplicateMirror );
+    menu->AddItem( PCB_ACTIONS::duplicateMirrorV, canDuplicateMirror );
 
     return menu;
 }
@@ -2868,6 +2914,16 @@ static void mirrorPad( PAD& aPad, const VECTOR2I& aMirrorPoint, FLIP_DIRECTION a
 }
 
 
+static void mirrorItem( BOARD_ITEM* aItem, const VECTOR2I& aMirrorPoint,
+                        FLIP_DIRECTION aFlipDirection )
+{
+    if( aItem->Type() == PCB_PAD_T )
+        mirrorPad( *static_cast<PAD*>( aItem ), aMirrorPoint, aFlipDirection );
+    else
+        aItem->Mirror( aMirrorPoint, aFlipDirection );
+}
+
+
 const std::vector<KICAD_T> EDIT_TOOL::MirrorableItems = {
     PCB_SHAPE_T,
     PCB_FIELD_T,
@@ -2943,61 +2999,7 @@ int EDIT_TOOL::Mirror( const TOOL_EVENT& aEvent )
 
         commit->Modify( item, nullptr, RECURSE_MODE::RECURSE );
 
-        // modify each object as necessary
-        switch( item->Type() )
-        {
-        case PCB_SHAPE_T:
-            static_cast<PCB_SHAPE*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        case PCB_ZONE_T:
-            static_cast<ZONE*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        case PCB_FIELD_T:
-        case PCB_TEXT_T:
-            static_cast<PCB_TEXT*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        case PCB_TEXTBOX_T:
-            static_cast<PCB_TEXTBOX*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        case PCB_TABLE_T:
-        case PCB_DRILL_CHART_T:
-            static_cast<PCB_TABLE*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        case PCB_PAD_T:
-            mirrorPad( *static_cast<PAD*>( item ), mirrorPoint, flipDirection );
-            break;
-
-        case PCB_TRACE_T:
-        case PCB_ARC_T:
-        case PCB_VIA_T:
-            static_cast<PCB_TRACK*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        case PCB_GROUP_T:
-            static_cast<PCB_GROUP*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        case PCB_GENERATOR_T:
-            static_cast<PCB_GENERATOR*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        case PCB_POINT_T:
-
-            static_cast<PCB_POINT*>( item )->Mirror( mirrorPoint, flipDirection ); break;
-
-        case PCB_REFERENCE_IMAGE_T:
-            static_cast<PCB_REFERENCE_IMAGE*>( item )->Mirror( mirrorPoint, flipDirection );
-            break;
-
-        default:
-            // it's likely the commit object is wrong if you get here
-            UNIMPLEMENTED_FOR( item->GetClass() );
-        }
+        mirrorItem( static_cast<BOARD_ITEM*>( item ), mirrorPoint, flipDirection );
     }
 
     // Don't push a separate undo entry when we're in the middle of a move operation.
@@ -3613,6 +3615,13 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
         return 0;
     }
 
+    const bool mirrorH = aEvent.IsAction( &PCB_ACTIONS::duplicateMirrorH );
+    const bool mirrorV = aEvent.IsAction( &PCB_ACTIONS::duplicateMirrorV );
+    const bool duplicateMirror = mirrorH || mirrorV;
+
+    if( duplicateMirror && m_dragging )
+        return 0;
+
     bool increment = aEvent.IsAction( &PCB_ACTIONS::duplicateIncrement );
 
     // Be sure that there is at least one item that we can modify
@@ -3665,6 +3674,9 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
 
         BOARD_ITEM* dupe_item = nullptr;
         BOARD_ITEM* orig_item = static_cast<BOARD_ITEM*>( item );
+
+        if( duplicateMirror && !canDuplicateMirrorItem( orig_item, !m_isFootprintEditor ) )
+            continue;
 
         if( !m_isFootprintEditor && orig_item->GetParentFootprint() )
         {
@@ -3769,7 +3781,19 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
                 break;
             }
         }
+
+        if( duplicateMirror && dupe_item )
+        {
+            const FLIP_DIRECTION direction = mirrorV ? FLIP_DIRECTION::TOP_BOTTOM
+                                                    : FLIP_DIRECTION::LEFT_RIGHT;
+
+            // Mirror each duplicated root once; groups mirror their descendants themselves.
+            mirrorItem( dupe_item, VECTOR2I( 0, 0 ), direction );
+        }
     }
+
+    if( duplicateMirror && new_items.empty() )
+        return 0;
 
     // Carry constraints whose members were all duplicated repointed at the copies
     // constraints are not selectable so add them to commit but keep them out of new selection
@@ -3791,8 +3815,9 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
     {
         editFrame->DisplayToolMsg( wxString::Format( _( "Duplicated %d item(s)" ), (int) new_items.size() ) );
 
-        // If items were duplicated, pick them up
-        if( doMoveSelection( aEvent, &commit, true ) )
+        if( duplicateMirror )
+            commit.Push( _( "Duplicate and Mirror" ) );
+        else if( doMoveSelection( aEvent, &commit, true ) )
             commit.Push( _( "Duplicate" ) );
         else
             commit.Revert();
@@ -4269,6 +4294,8 @@ void EDIT_TOOL::setTransitions()
     Go( &EDIT_TOOL::Move,                     PCB_ACTIONS::moveWithReference.MakeEvent() );
     Go( &EDIT_TOOL::Duplicate,                ACTIONS::duplicate.MakeEvent() );
     Go( &EDIT_TOOL::Duplicate,                PCB_ACTIONS::duplicateIncrement.MakeEvent() );
+    Go( &EDIT_TOOL::Duplicate,                PCB_ACTIONS::duplicateMirrorH.MakeEvent() );
+    Go( &EDIT_TOOL::Duplicate,                PCB_ACTIONS::duplicateMirrorV.MakeEvent() );
     Go( &EDIT_TOOL::Mirror,                   PCB_ACTIONS::mirrorH.MakeEvent() );
     Go( &EDIT_TOOL::Mirror,                   PCB_ACTIONS::mirrorV.MakeEvent() );
     Go( &EDIT_TOOL::Swap,                     PCB_ACTIONS::swap.MakeEvent() );

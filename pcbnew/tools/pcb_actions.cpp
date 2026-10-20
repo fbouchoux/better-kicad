@@ -999,6 +999,22 @@ TOOL_ACTION PCB_ACTIONS::mirrorV( TOOL_ACTION_ARGS()
         .Tooltip( _( "Mirrors selected item(s) across the X axis" ) )
         .Icon( BITMAPS::mirror_v ) );
 
+TOOL_ACTION PCB_ACTIONS::duplicateMirrorH( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveEdit.duplicateMirrorHorizontally" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Duplicate and Mirror Across Y Axis" ) )
+        .Tooltip( _( "Duplicates selected item(s), mirroring the copies across the Y axis "
+                     "through the absolute origin" ) )
+        .Icon( BITMAPS::mirror_h ) );
+
+TOOL_ACTION PCB_ACTIONS::duplicateMirrorV( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveEdit.duplicateMirrorVertically" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Duplicate and Mirror Across X Axis" ) )
+        .Tooltip( _( "Duplicates selected item(s), mirroring the copies across the X axis "
+                     "through the absolute origin" ) )
+        .Icon( BITMAPS::mirror_v ) );
+
 TOOL_ACTION PCB_ACTIONS::swap( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveEdit.swap" )
         .Scope( AS_GLOBAL )

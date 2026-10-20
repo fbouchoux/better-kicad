@@ -127,6 +127,10 @@ public:
     static TOOL_ACTION mirrorH;
     static TOOL_ACTION mirrorV;
 
+    /// Duplicate selected items across the axes through the absolute origin.
+    static TOOL_ACTION duplicateMirrorH;
+    static TOOL_ACTION duplicateMirrorV;
+
     /// Swapping of selected items
     static TOOL_ACTION swap;
 
