@@ -49,6 +49,7 @@
 #include <boost/range/adaptor/reversed.hpp>
 
 #include <drawing_sheet/ds_data_model.h>
+#include <geometry/shape_compound.h>
 #include <sch_edit_frame.h>
 #include <sch_line.h>
 #include <kiface_base.h>
@@ -181,9 +182,91 @@ public:
 
             field->SetPosition( pos );
         }
+
+        if( !forceWireSpacing )
+            tightenVerticalPlacement();
     }
 
 protected:
+    /**
+     * Move fields above or below the body to the closest grid position that keeps the
+     * rendered text outside it.  The text bounding boxes used for the initial placement
+     * include font padding, which can otherwise leave an unnecessary grid step of space.
+     */
+    void tightenVerticalPlacement()
+    {
+        std::vector<std::pair<SCH_FIELD*, BOX2I>> fields;
+        BOX2I textBox;
+
+        for( SCH_FIELD* field : m_fields )
+        {
+            if( !field->IsVisible() || !field->CanAutoplace()
+                || field->GetShownText( true ).IsEmpty() )
+                continue;
+
+            BOX2I box = field->GetEffectiveTextShape( false, field->GetBoundingBox(),
+                                                    field->GetDrawRotation() )->BBox();
+            fields.emplace_back( field, box );
+            textBox.Merge( box );
+        }
+
+        if( fields.empty() )
+            return;
+
+        bool above = textBox.GetBottom() <= m_symbol_bbox.GetTop();
+        bool below = textBox.GetTop() >= m_symbol_bbox.GetBottom();
+
+        if( !above && !below )
+            return;
+
+        int offset = above ? m_symbol_bbox.GetTop() - textBox.GetBottom()
+                           : m_symbol_bbox.GetBottom() - textBox.GetTop();
+        int grid = schIUScale.MilsToIU( 50 );
+
+        if( m_align_to_grid )
+        {
+            int y = fields.front().first->GetPosition().y + offset;
+            int remainder = ( y % grid + grid ) % grid;
+
+            offset += above ? -remainder : ( grid - remainder ) % grid;
+        }
+
+        BOX2I drawableArea = getDrawableArea();
+        bool checkDrawableArea = drawableArea.GetWidth() > 0 && drawableArea.GetHeight() > 0;
+
+        // Try successive grid positions away from the body if the closest one is occupied.
+        while( above ? offset > 0 : offset < 0 )
+        {
+            bool collision = false;
+
+            for( const auto& [field, bounds] : fields )
+            {
+                BOX2I box = bounds;
+                box.Offset( 0, offset );
+
+                if( ( checkDrawableArea && !drawableArea.Contains( box ) )
+                    || !filterCollisions( box ).empty() )
+                {
+                    collision = true;
+                    break;
+                }
+            }
+
+            if( !collision )
+            {
+                for( const auto& [field, bounds] : fields )
+                    field->SetPosition( field->GetPosition() + VECTOR2I( 0, offset ) );
+
+                return;
+            }
+
+            if( !m_align_to_grid )
+                return;
+
+            offset += above ? -grid : grid;
+        }
+    }
+
     /**
      * Compute and return the size of the fields' bounding box.
      * @param aDynamic - if true, use dynamic spacing
