@@ -89,6 +89,13 @@ public:
     int CycleLayerPresets( const TOOL_EVENT& aEvent );
     int LayerPresetFeedback( const TOOL_EVENT& aEvent );
 
+    /**
+     * Return the next (or previous) visible copper layer in physical stack order, or
+     * UNDEFINED_LAYER at either end of the stack.  Never wraps around.
+     */
+    static PCB_LAYER_ID AdjacentVisibleCopperLayer( const BOARD* aBoard, PCB_LAYER_ID aLayer,
+                                                    bool aNext );
+
     // Grid control
     int GridPlaceOrigin( const TOOL_EVENT& aEvent );
     int GridResetOrigin( const TOOL_EVENT& aEvent );

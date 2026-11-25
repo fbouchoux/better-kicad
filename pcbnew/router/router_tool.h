@@ -99,6 +99,13 @@ public:
      */
     bool RoutingInProgress();
 
+    /**
+     * Step a Smart Via one copper layer for a mouse wheel notch while routing.
+     *
+     * @return true when the wheel event belongs to an active single track route.
+     */
+    bool HandleSmartViaWheel( int aRotation );
+
     void setTransitions() override;
 
     // A filter for narrowing a collection representing a simple corner
@@ -127,6 +134,7 @@ private:
     int onLayerCommand( const TOOL_EVENT& aEvent );
     int onViaCommand( const TOOL_EVENT& aEvent );
     int onViaStackCommand( const TOOL_EVENT& aEvent );
+    int onSmartViaCommand( const TOOL_EVENT& aEvent );
     int onSpreadTracksSetDistance( const TOOL_EVENT& aEvent );
     int onSpreadTracksIncDecDistance( const TOOL_EVENT& aEvent, bool aInc );
 
@@ -135,6 +143,31 @@ private:
 
     /// Remember where the placer is about to leave the newest drop's via.
     void recordPendingStackViaPos();
+
+    /// Arm the PNS via preview for a transition from @a aStart to @a aTarget.  A diameter and
+    /// drill of 0 size the via from the design rules.
+    void configureViaPlacement( const TOOL_EVENT& aEvent, PCB_LAYER_ID aStart, PCB_LAYER_ID aTarget,
+                                VIATYPE aType, int aDiameter = 0, int aDrill = 0 );
+
+    /// Via size a microvia stack preset routes with between @a aStart and @a aTarget.
+    void presetViaSize( const VIA_STACK_PRESET& aPreset, PCB_LAYER_ID aStart, PCB_LAYER_ID aTarget,
+                        int aNet, int& aDiameter, int& aDrill );
+
+    int currentNetCode() const;
+
+    /// True when the design rules permit a via of this type, span and size at the route head.
+    bool isViaAllowed( PCB_LAYER_ID aStart, PCB_LAYER_ID aTarget, VIATYPE aType, int aDiameter,
+                       int aDrill ) const;
+
+    /// Microvia stack preset a Smart Via between the two layers uses, or nullptr for a through via.
+    const VIA_STACK_PRESET* smartViaPreset( PCB_LAYER_ID aStart, PCB_LAYER_ID aTarget, int& aDiameter,
+                                            int& aDrill );
+
+    /// Forget the replaceable Smart Via, optionally dropping the stack expansion it queued.
+    void clearSmartVia( bool aRemoveExpansion );
+
+    /// Snaps a Smart Via onto a pad of the routed net on its destination layer.
+    void updateEndItem( const TOOL_EVENT& aEvent ) override;
 
     int onTrackViaSizeChanged( const TOOL_EVENT& aEvent );
 
@@ -168,6 +201,18 @@ private:
 
     // Vias already expandable when the first drop was armed; the route did not create these.
     std::set<KIID> m_preRouteExpandableVias;
+
+    // A Smart Via can be replaced until copper is fixed on its destination layer.
+    struct SMART_VIA_STATE
+    {
+        bool         active = false;
+        bool         placed = false;          ///< Fixed, but nothing routed from it yet
+        bool         ownsExpansion = false;   ///< Queued the newest stack expansion
+        PCB_LAYER_ID start = UNDEFINED_LAYER;
+        PCB_LAYER_ID target = UNDEFINED_LAYER;
+    };
+
+    SMART_VIA_STATE m_smartVia;
 };
 
 #endif

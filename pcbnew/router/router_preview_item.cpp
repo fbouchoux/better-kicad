@@ -34,6 +34,7 @@
 
 #include "pns_arc.h"
 #include "pns_line.h"
+#include "pns_router.h"
 #include "pns_segment.h"
 #include "pns_via.h"
 #include "pns_kicad_iface.h"
@@ -172,6 +173,18 @@ void ROUTER_PREVIEW_ITEM::Update( const PNS::ITEM* aItem )
         m_type = PR_SHAPE;
         m_width = 0;
         m_color = COLOR4D( 0.7, 0.7, 0.7, 0.8 );
+
+        // The via at the route head shows the layer routing continues on
+        if( PNS::ROUTER* router = PNS::ROUTER::GetInstance(); router && ( m_flags & PNS_HEAD_TRACE ) )
+        {
+            int currentLayer = router->GetCurrentLayer();
+
+            if( std::optional<int> target = router->Sizes().PairedLayer( currentLayer );
+                currentLayer >= 0 && target )
+            {
+                m_color = getLayerColor( m_iface->GetBoardLayerFromPNSLayer( *target ), aItem ).WithAlpha( 0.8 );
+            }
+        }
         m_depth = m_originDepth - ( static_cast<double>( PCB_LAYER_ID_COUNT ) * LayerDepthFactor );
 
         delete m_shape;

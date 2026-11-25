@@ -1581,6 +1581,41 @@ bool LINE_PLACER::FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinis
             auto newVia = Clone( pl.Via() );
             newVia->ResetUid();
             m_lastNode->Add( std::move( newVia ) );
+
+            // A via with no track before it (e.g. placed at the route start) is a layer
+            // transition here, so keep placing from it on the new layer
+            if( m_continueAfterVia && !aForceFinish )
+            {
+                m_fixedTail.AddStage( m_fixStart, m_currentLayer, m_placingVia, m_direction,
+                                      m_currentNode );
+
+                m_currentStart = pl.Via().Pos();
+                m_fixStart = m_currentStart;
+                m_startItem = nullptr;
+                m_placingVia = false;
+                m_chainedPlacement = false;
+                m_p_start = m_currentStart;
+                m_direction = m_initial_direction;
+
+                m_head.Line().Clear();
+                m_tail.Line().Clear();
+                m_head.RemoveVia();
+                m_tail.RemoveVia();
+                m_currentNode = m_lastNode;
+                m_lastNode = m_lastNode->Branch();
+
+                m_shove->AddLockedSpringbackNode( m_currentNode );
+
+                m_mouseTrailTracer.Clear();
+                m_mouseTrailTracer.SetTolerance( m_head.Width() );
+                m_mouseTrailTracer.AddTrailPoint( m_currentStart );
+                m_mouseTrailTracer.SetDefaultDirections( DIRECTION_45::UNDEFINED,
+                                                         DIRECTION_45::UNDEFINED );
+
+                m_placementCorrect = true;
+                return false;
+            }
+
             m_shove->AddLockedSpringbackNode( m_lastNode );
         }
 
@@ -1597,8 +1632,12 @@ bool LINE_PLACER::FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinis
     if( l.PointCount() > 2 )
         p_pre_last = l.CPoints()[ l.PointCount() - 2 ];
 
-    if( aEndItem && m_currentNet && m_currentNet == aEndItem->Net() )
+    // A via onto a same-net pad continues on its destination layer instead of ending the route
+    if( aEndItem && m_currentNet && m_currentNet == aEndItem->Net()
+        && !( m_continueAfterVia && pl.EndsWithVia() ) )
+    {
         realEnd = true;
+    }
 
     if( aForceFinish )
         realEnd = true;
@@ -1917,10 +1956,13 @@ void LINE_PLACER::UpdateSizes( const SIZES_SETTINGS& aSizes )
             m_currentTrace.SetWidth( m_sizes.TrackWidth() );
         }
 
+        // Rebuild rather than resize: a replaced via can also change its type and layer span
         if( m_head.EndsWithVia() )
         {
-            m_head.SetViaDiameter( m_sizes.ViaDiameter() );
-            m_head.SetViaDrill( m_sizes.ViaDrill() );
+            VECTOR2I viaPos = m_head.Via().Pos();
+
+            m_head.RemoveVia();
+            m_head.AppendVia( makeVia( viaPos ) );
         }
     }
 }

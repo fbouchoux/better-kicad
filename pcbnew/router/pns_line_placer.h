@@ -137,6 +137,12 @@ public:
      */
     bool FixRoute( const VECTOR2I& aP, ITEM* aEndItem, bool aForceFinish ) override;
 
+    /**
+     * Treat a via fixed by the next FixRoute() as a layer transition rather than a route end,
+     * even when it has no preceding segment or lands on a same-net item.
+     */
+    void SetContinueAfterVia( bool aContinue ) { m_continueAfterVia = aContinue; }
+
     std::optional<VECTOR2I> UnfixRoute() override;
 
     bool CommitPlacement() override;
@@ -393,6 +399,7 @@ private:
     bool           m_chainedPlacement;
     bool           m_orthoMode;
     bool           m_placementCorrect;
+    bool           m_continueAfterVia = false;
 
     FIXED_TAIL     m_fixedTail;
     MOUSE_TRAIL_TRACER m_mouseTrailTracer;
