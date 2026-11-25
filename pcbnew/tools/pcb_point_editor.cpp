@@ -2413,6 +2413,16 @@ std::unique_ptr<POINT_EDIT_BEHAVIOR> PCB_POINT_EDITOR::makeBehavior( EDA_ITEM* a
         else
         {
             PCB_GENERATOR* generator = static_cast<PCB_GENERATOR*>( aItem );
+            EDIT_POINTS    probe( generator );
+
+            // Generators without edit points (e.g. via stacks) would otherwise leave an
+            // active point editor with nothing to edit
+            if( !generator->MakeEditPoints( probe ) )
+            {
+                aRejected = true;
+                break;
+            }
+
             behavior = std::make_unique<GENERATOR_POINT_EDIT_BEHAVIOR>( *generator );
         }
         break;
@@ -4642,11 +4652,8 @@ int PCB_POINT_EDITOR::OnSelectionChange( const TOOL_EVENT& aEvent )
         return 0;
 
     Activate();
-    // Must be done after Activate() so that it gets set into the correct context
-    getViewControls()->ShowCursor( true );
 
     PCB_GRID_HELPER grid( m_toolMgr, editFrame->GetMagneticItemsSettings() );
-    grid.SetPointEditProfile( true );
     m_constraintDragSession.reset();
 
     // Use the original object as a construction item
@@ -4712,6 +4719,11 @@ int PCB_POINT_EDITOR::OnSelectionChange( const TOOL_EVENT& aEvent )
 
     if( !m_editPoints && m_blockHandles.empty() )
         return 0;
+
+    // Only now that there is something to edit, so unsupported selections don't flash the
+    // cursor. Must be done after Activate() so that it gets set into the correct context.
+    getViewControls()->ShowCursor( true );
+    grid.SetPointEditProfile( true );
 
     PCB_SHAPE* graphicItem = dynamic_cast<PCB_SHAPE*>( item );
 
