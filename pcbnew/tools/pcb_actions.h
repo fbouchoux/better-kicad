@@ -306,6 +306,7 @@ public:
     /// Actions to enable switching modes via hotkey assignments
     static TOOL_ACTION routerHighlightMode;
     static TOOL_ACTION routerShoveMode;
+    static TOOL_ACTION routerShoveNoViasMode;
     static TOOL_ACTION routerWalkaroundMode;
     static TOOL_ACTION cycleRouterMode;
 

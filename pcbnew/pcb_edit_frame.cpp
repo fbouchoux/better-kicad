@@ -1507,7 +1507,14 @@ void PCB_EDIT_FRAME::setupUIConditions()
             [this]( const SELECTION& )
             {
                 ROUTER_TOOL* tool = m_toolManager->GetTool<ROUTER_TOOL>();
-                return tool && tool->GetRouterMode() == PNS::RM_Shove;
+                return tool && tool->GetRouterMode() == PNS::RM_Shove && tool->Router()->Settings().ShoveVias();
+            };
+
+    auto isShoveNoViasMode =
+            [this]( const SELECTION& )
+            {
+                ROUTER_TOOL* tool = m_toolManager->GetTool<ROUTER_TOOL>();
+                return tool && tool->GetRouterMode() == PNS::RM_Shove && !tool->Router()->Settings().ShoveVias();
             };
 
     auto isWalkaroundMode =
@@ -1519,6 +1526,7 @@ void PCB_EDIT_FRAME::setupUIConditions()
 
     mgr->SetConditions( PCB_ACTIONS::routerHighlightMode,  CHECK( isHighlightMode ) );
     mgr->SetConditions( PCB_ACTIONS::routerShoveMode,      CHECK( isShoveMode ) );
+    mgr->SetConditions( PCB_ACTIONS::routerShoveNoViasMode, CHECK( isShoveNoViasMode ) );
     mgr->SetConditions( PCB_ACTIONS::routerWalkaroundMode, CHECK( isWalkaroundMode ) );
 
     auto isAutoTrackWidth =

@@ -3137,6 +3137,14 @@ TOOL_ACTION PCB_ACTIONS::routerShoveMode( TOOL_ACTION_ARGS()
         .Flags( AF_NONE )
         .Parameter( PNS::RM_Shove ) );
 
+TOOL_ACTION PCB_ACTIONS::routerShoveNoViasMode( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveRouter.ShoveNoViasMode" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Router Shove Mode, Excluding Vias" ) )
+        .Tooltip( _( "Switch router to shove mode without moving vias" ) )
+        .Flags( AF_NONE )
+        .Parameter( PNS::RM_Shove ) );
+
 TOOL_ACTION PCB_ACTIONS::routerWalkaroundMode( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveRouter.WalkaroundMode" )
         .Scope( AS_GLOBAL )

@@ -226,6 +226,7 @@ std::optional<TOOLBAR_CONFIGURATION> PCB_EDIT_TOOLBAR_SETTINGS::DefaultToolbarCo
 
                                     menu->Add( PCB_ACTIONS::routerHighlightMode, ACTION_MENU::CHECK );
                                     menu->Add( PCB_ACTIONS::routerShoveMode, ACTION_MENU::CHECK );
+                                    menu->Add( PCB_ACTIONS::routerShoveNoViasMode, ACTION_MENU::CHECK );
                                     menu->Add( PCB_ACTIONS::routerWalkaroundMode, ACTION_MENU::CHECK );
                                     menu->AppendSeparator();
                                     menu->Add( PCB_ACTIONS::routerSettingsDialog );
