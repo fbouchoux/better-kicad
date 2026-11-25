@@ -1047,6 +1047,10 @@ bool EDIT_TOOL::Init()
     menu.AddItem( ACTIONS::paste,                 noActiveToolCondition, 150 );
     menu.AddItem( ACTIONS::pasteSpecial,          noActiveToolCondition && !inFootprintEditor, 150 );
     menu.AddItem( ACTIONS::duplicate,             SELECTION_CONDITIONS::NotEmpty, 150 );
+    menu.AddItem( PCB_ACTIONS::duplicateMirrorH,  SELECTION_CONDITIONS::NotEmpty && inFootprintEditor
+                                                      && notMovingCondition, 150 );
+    menu.AddItem( PCB_ACTIONS::duplicateMirrorV,  SELECTION_CONDITIONS::NotEmpty && inFootprintEditor
+                                                      && notMovingCondition, 150 );
     menu.AddItem( ACTIONS::doDelete,              SELECTION_CONDITIONS::NotEmpty, 150 );
 
     menu.AddSeparator( 2000 );
@@ -3865,24 +3869,62 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
     // we have a selection to work on now, so start the tool process
     PCB_BASE_EDIT_FRAME* editFrame = getEditFrame<PCB_BASE_EDIT_FRAME>();
     BOARD_COMMIT         commit( this );
-    FOOTPRINT*           parentFootprint = nullptr;
-
-    if( m_isFootprintEditor )
-        parentFootprint = editFrame->GetBoard()->GetFirstFootprint();
 
     // If the selection was given a hover, we do not keep the selection after completion
     bool is_hover = selection.IsHover();
 
+    std::vector<BOARD_ITEM*> new_items = duplicateSelection( selection, commit, increment );
+
+    // Clear the old selection first
+    m_toolMgr->RunAction( ACTIONS::selectionClear );
+
+    // Select the new items
+    EDA_ITEMS nItems( new_items.begin(), new_items.end() );
+    m_toolMgr->RunAction<EDA_ITEMS*>( ACTIONS::selectItems, &nItems );
+
+    // record the new items as added
+    if( !selection.Empty() )
+    {
+        editFrame->DisplayToolMsg( wxString::Format( _( "Duplicated %d item(s)" ), (int) new_items.size() ) );
+
+        // If items were duplicated, pick them up
+        if( doMoveSelection( aEvent, &commit, true ) )
+        {
+            commit.Push( _( "Duplicate" ) );
+
+            recordDuplicatedItems( m_toolMgr, new_items );
+        }
+        else
+        {
+            commit.Revert();
+        }
+
+        // Deselect the duplicated item if we originally started as a hover selection
+        if( is_hover )
+            m_toolMgr->RunAction( ACTIONS::selectionClear );
+    }
+
+    return 0;
+}
+
+
+std::vector<BOARD_ITEM*> EDIT_TOOL::duplicateSelection( const PCB_SELECTION& aSelection, BOARD_COMMIT& aCommit,
+                                                        bool aIncrement )
+{
+    FOOTPRINT* parentFootprint = nullptr;
+
+    if( m_isFootprintEditor )
+        parentFootprint = board()->GetFirstFootprint();
+
     std::vector<BOARD_ITEM*> new_items;
-    new_items.reserve( selection.Size() );
+    new_items.reserve( aSelection.Size() );
 
     // Maps each duplicated original KIID to its duplicate so constraints between them
     // can be repointed at the copies once duplication finishes
     std::map<KIID, KIID> idMap;
 
     // Each selected item is duplicated and pushed to new_items list
-    // Old selection is cleared, and new items are then selected.
-    for( EDA_ITEM* item : selection )
+    for( EDA_ITEM* item : aSelection )
     {
         if( !item->IsBOARD_ITEM() )
             continue;
@@ -3918,9 +3960,9 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
             case PCB_DIM_LEADER_T:
             case PCB_GRID_ITEM_T:
                 if( m_isFootprintEditor )
-                    dupe_item = parentFootprint->DuplicateItem( true, &commit, orig_item );
+                    dupe_item = parentFootprint->DuplicateItem( true, &aCommit, orig_item );
                 else
-                    dupe_item = orig_item->Duplicate( true, &commit );
+                    dupe_item = orig_item->Duplicate( true, &aCommit );
 
                 // Clear the selection flag here, otherwise the PCB_SELECTION_TOOL
                 // will not properly select it later on
@@ -3931,7 +3973,7 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
 
                 idMap[orig_item->m_Uuid] = dupe_item->m_Uuid;
                 new_items.push_back( dupe_item );
-                commit.Add( dupe_item );
+                aCommit.Add( dupe_item );
                 break;
 
             case PCB_FIELD_T:
@@ -3941,9 +3983,9 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
                 break;
 
             case PCB_PAD_T:
-                dupe_item = parentFootprint->DuplicateItem( true, &commit, orig_item );
+                dupe_item = parentFootprint->DuplicateItem( true, &aCommit, orig_item );
 
-                if( increment && static_cast<PAD*>( dupe_item )->CanHaveNumber() )
+                if( aIncrement && static_cast<PAD*>( dupe_item )->CanHaveNumber() )
                 {
                     PAD_TOOL* padTool = m_toolMgr->GetTool<PAD_TOOL>();
                     wxString  padNumber = padTool->GetLastPadNumber();
@@ -3958,7 +4000,7 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
 
                 idMap[orig_item->m_Uuid] = dupe_item->m_Uuid;
                 new_items.push_back( dupe_item );
-                commit.Add( dupe_item );
+                aCommit.Add( dupe_item );
                 break;
 
             case PCB_DRILL_CHART_T:
@@ -3972,20 +4014,20 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
             {
                 // DeepDuplicate maps original to duplicate KIID per descendant while cloning the group
                 // so grouped constraints can be repointed unordered iteration blocks a later pairing
-                dupe_item = static_cast<PCB_GROUP*>( orig_item )->DeepDuplicate( true, &commit, &idMap );
+                dupe_item = static_cast<PCB_GROUP*>( orig_item )->DeepDuplicate( true, &aCommit, &idMap );
 
                 dupe_item->RunOnChildren(
                         [&]( BOARD_ITEM* aItem )
                         {
                             aItem->ClearSelected();
                             new_items.push_back( aItem );
-                            commit.Add( aItem );
+                            aCommit.Add( aItem );
                         },
                         RECURSE_MODE::RECURSE );
 
                 dupe_item->ClearSelected();
                 new_items.push_back( dupe_item );
-                commit.Add( dupe_item );
+                aCommit.Add( dupe_item );
                 break;
             }
 
@@ -4002,37 +4044,124 @@ int EDIT_TOOL::Duplicate( const TOOL_EVENT& aEvent )
                                                            : board()->Constraints();
 
     for( PCB_CONSTRAINT* clone : CloneFullySelectedConstraints( sourceConstraints, idMap ) )
-        commit.Add( clone );
+        aCommit.Add( clone );
 
-    // Clear the old selection first
-    m_toolMgr->RunAction( ACTIONS::selectionClear );
+    return new_items;
+}
 
-    // Select the new items
-    EDA_ITEMS nItems( new_items.begin(), new_items.end() );
-    m_toolMgr->RunAction<EDA_ITEMS*>( ACTIONS::selectItems, &nItems );
 
-    // record the new items as added
-    if( !selection.Empty() )
+std::map<wxString, wxString> EDIT_TOOL::MirroredPadNumbers( const std::vector<wxString>& aSourceNumbers,
+                                                            const std::vector<wxString>& aAllNumbers )
+{
+    auto asNumber =
+            []( const wxString& aNumber ) -> std::optional<long>
+            {
+                long value = 0;
+
+                if( aNumber.IsEmpty() || !aNumber.IsNumber() || !aNumber.ToLong( &value ) || value <= 0 )
+                    return std::nullopt;
+
+                return value;
+            };
+
+    long highest = 0;
+
+    for( const wxString& number : aAllNumbers )
+        highest = std::max( highest, asNumber( number ).value_or( 0 ) );
+
+    std::map<long, wxString> sources;
+
+    for( const wxString& number : aSourceNumbers )
     {
-        editFrame->DisplayToolMsg( wxString::Format( _( "Duplicated %d item(s)" ), (int) new_items.size() ) );
-
-        // If items were duplicated, pick them up
-        if( doMoveSelection( aEvent, &commit, true ) )
-        {
-            commit.Push( _( "Duplicate" ) );
-
-            recordDuplicatedItems( m_toolMgr, new_items );
-        }
-        else
-        {
-            commit.Revert();
-        }
-
-        // Deselect the duplicated item if we originally started as a hover selection
-        if( is_hover )
-            m_toolMgr->RunAction( ACTIONS::selectionClear );
+        if( std::optional<long> value = asNumber( number ) )
+            sources.emplace( *value, number );
     }
 
+    // Copies count on from the highest number in reverse order, so pins mirrored across the
+    // part continue counter-clockwise (1..4 on the left give 8..5 opposite them)
+    std::map<wxString, wxString> renumbered;
+    long                         next = highest + (long) sources.size();
+
+    for( const auto& [value, number] : sources )
+        renumbered[number] = wxString::Format( wxS( "%ld" ), next-- );
+
+    return renumbered;
+}
+
+
+int EDIT_TOOL::DuplicateMirror( const TOOL_EVENT& aEvent )
+{
+    if( isRouterActive() || !m_isFootprintEditor )
+    {
+        wxBell();
+        return 0;
+    }
+
+    const PCB_SELECTION& selection = m_selectionTool->RequestSelection(
+            []( const VECTOR2I&, GENERAL_COLLECTOR& aCollector, PCB_SELECTION_TOOL* sTool )
+            {
+                sTool->FilterCollectorForMarkers( aCollector );
+                sTool->FilterCollectorForHierarchy( aCollector, true );
+                sTool->FilterCollectorForTableCells( aCollector );
+            } );
+
+    FOOTPRINT* footprint = board()->GetFirstFootprint();
+
+    if( selection.Empty() || !footprint || !CanDuplicateSelection( selection ) )
+        return 0;
+
+    BOARD_COMMIT             commit( this );
+    std::vector<BOARD_ITEM*> newItems = duplicateSelection( selection, commit, false );
+
+    if( newItems.empty() )
+        return 0;
+
+    std::vector<wxString> sourceNumbers;
+    std::vector<wxString> allNumbers;
+
+    for( EDA_ITEM* item : selection )
+    {
+        if( item->Type() == PCB_PAD_T )
+            sourceNumbers.push_back( static_cast<PAD*>( item )->GetNumber() );
+    }
+
+    for( PAD* pad : footprint->Pads() )
+        allNumbers.push_back( pad->GetNumber() );
+
+    // Non-numeric numbers such as BGA "A1" are kept, and pads without a number stay without
+    std::map<wxString, wxString> renumbered = MirroredPadNumbers( sourceNumbers, allNumbers );
+    std::set<BOARD_ITEM*>        newItemSet( newItems.begin(), newItems.end() );
+    PCB_SELECTION                toMirror;
+
+    for( BOARD_ITEM* item : newItems )
+    {
+        if( PAD* pad = dynamic_cast<PAD*>( item ) )
+        {
+            if( auto it = renumbered.find( pad->GetNumber() ); it != renumbered.end() )
+                pad->SetNumber( it->second );
+        }
+
+        // Members of a duplicated group move with it
+        EDA_GROUP* group = item->GetParentGroup();
+
+        if( !group || !newItemSet.count( static_cast<BOARD_ITEM*>( group->AsEdaItem() ) ) )
+            toMirror.Add( item );
+    }
+
+    const FLIP_DIRECTION direction = aEvent.IsAction( &PCB_ACTIONS::duplicateMirrorV ) ? FLIP_DIRECTION::TOP_BOTTOM
+                                                                                        : FLIP_DIRECTION::LEFT_RIGHT;
+
+    mirrorSelection( commit, toMirror, MIRROR_AXIS( footprint->GetPosition(), direction ) );
+
+    commit.Push( _( "Duplicate and Mirror" ) );
+    recordDuplicatedItems( m_toolMgr, newItems );
+
+    m_toolMgr->RunAction( ACTIONS::selectionClear );
+
+    EDA_ITEMS selectItems( newItems.begin(), newItems.end() );
+    m_toolMgr->RunAction<EDA_ITEMS*>( ACTIONS::selectItems, &selectItems );
+
+    frame()->DisplayToolMsg( wxString::Format( _( "Duplicated and mirrored %d item(s)" ), (int) newItems.size() ) );
     return 0;
 }
 
@@ -4496,6 +4625,8 @@ void EDIT_TOOL::setTransitions()
     Go( &EDIT_TOOL::Move,                     PCB_ACTIONS::moveWithReference.MakeEvent() );
     Go( &EDIT_TOOL::Duplicate,                ACTIONS::duplicate.MakeEvent() );
     Go( &EDIT_TOOL::Duplicate,                PCB_ACTIONS::duplicateIncrement.MakeEvent() );
+    Go( &EDIT_TOOL::DuplicateMirror,          PCB_ACTIONS::duplicateMirrorH.MakeEvent() );
+    Go( &EDIT_TOOL::DuplicateMirror,          PCB_ACTIONS::duplicateMirrorV.MakeEvent() );
     Go( &EDIT_TOOL::Mirror,                   PCB_ACTIONS::mirrorH.MakeEvent() );
     Go( &EDIT_TOOL::Mirror,                   PCB_ACTIONS::mirrorV.MakeEvent() );
     Go( &EDIT_TOOL::MirrorInteractive,        PCB_ACTIONS::mirrorInteractive.MakeEvent() );

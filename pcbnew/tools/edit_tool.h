@@ -185,6 +185,20 @@ public:
     static bool CanDuplicateSelection( const SELECTION& aSelection );
 
     /**
+     * Footprint editor: duplicate the selection mirrored about the footprint anchor, in one undo
+     * step and without picking the copies up.
+     */
+    int DuplicateMirror( const TOOL_EVENT& aEvent );
+
+    /**
+     * Numbers for the mirrored copies of pads numbered @a aSourceNumbers.  Copies count on from
+     * the highest number in @a aAllNumbers, in reverse order of their sources, so pins mirrored
+     * across a part continue counter-clockwise.  Non-numeric numbers are not in the map.
+     */
+    static std::map<wxString, wxString> MirroredPadNumbers( const std::vector<wxString>& aSourceNumbers,
+                                                            const std::vector<wxString>& aAllNumbers );
+
+    /**
      * Invoke a dialog box to allow moving of the item by an exact amount.
      */
     int MoveExact( const TOOL_EVENT& aEvent );
@@ -226,6 +240,10 @@ private:
      * Cut the current selection to the clipboard by formatting it as a fake pcb.
      */
     int cutToClipboard( const TOOL_EVENT& aEvent );
+
+    /// Duplicate @a aSelection into @a aCommit, returning the copies (group members included).
+    std::vector<BOARD_ITEM*> duplicateSelection( const PCB_SELECTION& aSelection, BOARD_COMMIT& aCommit,
+                                                 bool aIncrement );
 
     /// Return the right modification point (e.g. for rotation), depending on the number of
     /// selected items.

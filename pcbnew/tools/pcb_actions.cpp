@@ -1005,6 +1005,22 @@ TOOL_ACTION PCB_ACTIONS::duplicateIncrement(TOOL_ACTION_ARGS()
         .Tooltip( _( "Duplicates the selected item(s), incrementing pad numbers" ) )
         .Icon( BITMAPS::duplicate ) );
 
+TOOL_ACTION PCB_ACTIONS::duplicateMirrorH( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveEdit.duplicateMirrorH" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Duplicate and Mirror Horizontally" ) )
+        .Tooltip( _( "Duplicates the selected item(s) mirrored across the footprint anchor's Y axis, "
+                     "numbering the pad copies counter-clockwise" ) )
+        .Icon( BITMAPS::mirror_h ) );
+
+TOOL_ACTION PCB_ACTIONS::duplicateMirrorV( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveEdit.duplicateMirrorV" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Duplicate and Mirror Vertically" ) )
+        .Tooltip( _( "Duplicates the selected item(s) mirrored across the footprint anchor's X axis, "
+                     "numbering the pad copies counter-clockwise" ) )
+        .Icon( BITMAPS::mirror_v ) );
+
 TOOL_ACTION PCB_ACTIONS::moveExact( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveEdit.moveExact" )
         .Scope( AS_GLOBAL )

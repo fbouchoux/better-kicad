@@ -2308,6 +2308,8 @@ void FOOTPRINT_EDIT_FRAME::setupUIConditions()
     mgr->SetConditions( ACTIONS::pasteSpecial,           ENABLE( SELECTION_CONDITIONS::Idle && cond.NoActiveTool() ) );
     mgr->SetConditions( ACTIONS::doDelete,               ENABLE( cond.HasItems() ) );
     mgr->SetConditions( ACTIONS::duplicate,              ENABLE( cond.HasItems() ) );
+    mgr->SetConditions( PCB_ACTIONS::duplicateMirrorH,   ENABLE( cond.HasItems() ) );
+    mgr->SetConditions( PCB_ACTIONS::duplicateMirrorV,   ENABLE( cond.HasItems() ) );
     mgr->SetConditions( ACTIONS::selectAll,              ENABLE( cond.HasItems() ) );
     mgr->SetConditions( ACTIONS::unselectAll,            ENABLE( cond.HasItems() ) );
 

@@ -109,7 +109,8 @@ void FOOTPRINT_EDIT_FRAME::doReCreateMenuBar()
     editMenu->Add( ACTIONS::paste );
     editMenu->Add( ACTIONS::doDelete );
     editMenu->Add( ACTIONS::duplicate );
-
+    editMenu->Add( PCB_ACTIONS::duplicateMirrorH );
+    editMenu->Add( PCB_ACTIONS::duplicateMirrorV );
 
     editMenu->AppendSeparator();
 

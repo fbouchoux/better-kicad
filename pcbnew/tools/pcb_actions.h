@@ -192,6 +192,10 @@ public:
     /// Activation of the duplication tool with incrementing (e.g. pad number)
     static TOOL_ACTION duplicateIncrement;
 
+    /// Footprint editor: duplicate mirrored about the footprint anchor
+    static TOOL_ACTION duplicateMirrorH;
+    static TOOL_ACTION duplicateMirrorV;
+
     /// Deleting a BOARD_ITEM
     static TOOL_ACTION remove;
     static TOOL_ACTION deleteFull;
