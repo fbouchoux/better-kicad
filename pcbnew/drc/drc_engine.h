@@ -21,6 +21,7 @@
 
 #include <memory>
 #include <mutex>
+#include <set>
 #include <shared_mutex>
 #include <vector>
 #include <unordered_map>
@@ -197,9 +198,11 @@ public:
 
     /**
      * Run the DRC tests.
+     *
+     * @param aProviders the names of the providers to run; empty runs them all.
      */
     void RunTests( EDA_UNITS aUnits, bool aReportAllTrackErrors, bool aTestFootprints,
-                   BOARD_COMMIT* aCommit = nullptr );
+                   BOARD_COMMIT* aCommit = nullptr, const std::set<wxString>& aProviders = {} );
 
     bool IsErrorLimitExceeded( int error_code );
 
@@ -299,7 +302,7 @@ public:
     bool HasUserDefinedPhysicalConstraint();
     std::set<int> QueryDistinctConstraints( DRC_CONSTRAINT_T aConstraintId );
 
-    std::vector<DRC_TEST_PROVIDER*> GetTestProviders() const { return m_testProviders; };
+    std::vector<DRC_TEST_PROVIDER*> GetTestProviders() const;
 
     DRC_TEST_PROVIDER* GetTestProvider( const wxString& name ) const;
 
@@ -375,7 +378,7 @@ protected:
 
     std::vector<std::shared_ptr<DRC_RULE>>  m_rules;
     bool                                    m_rulesValid;
-    std::vector<DRC_TEST_PROVIDER*>         m_testProviders;
+    std::vector<std::unique_ptr<DRC_TEST_PROVIDER>> m_testProviders;
 
     std::vector<int>           m_errorLimits;
     mutable std::mutex         m_errorLimitsMutex;

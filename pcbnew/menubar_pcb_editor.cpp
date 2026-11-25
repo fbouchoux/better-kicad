@@ -236,6 +236,7 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     showHidePanels->Add( PCB_ACTIONS::showLayersManager,          ACTION_MENU::CHECK );
     showHidePanels->Add( PCB_ACTIONS::showNetInspector,           ACTION_MENU::CHECK );
     showHidePanels->Add( PCB_ACTIONS::showConstraintsPanel,       ACTION_MENU::CHECK );
+    showHidePanels->Add( PCB_ACTIONS::showOnlineDRCPanel,         ACTION_MENU::CHECK );
     showHidePanels->Add( ACTIONS::showGitCommitPane, ACTION_MENU::CHECK );
 
     if( ADVANCED_CFG::GetCfg().m_EnablePcbDesignBlocks )

@@ -151,6 +151,10 @@ FONT* FONT::GetFont( const wxString& aFontName, bool aBold, bool aItalic,
 
     std::tuple<wxString, bool, bool, bool> key = { aFontName, aBold, aItalic, aForDrawingSheet };
 
+    // Boards are also parsed off the UI thread
+    static std::mutex s_fontMapMutex;
+    std::lock_guard   lock( s_fontMapMutex );
+
     FONT* font = nullptr;
 
     if( s_fontMap.find( key ) != s_fontMap.end() )

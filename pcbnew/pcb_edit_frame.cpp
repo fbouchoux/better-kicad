@@ -150,6 +150,8 @@
 #include <widgets/pcb_design_block_pane.h>
 #include <widgets/pcb_search_pane.h>
 #include <widgets/panel_constraints.h>
+#include <widgets/panel_online_drc.h>
+#include <drc/live_drc.h>
 #include <widgets/wx_infobar.h>
 #include <widgets/panel_selection_filter.h>
 #include <widgets/pcb_properties_panel.h>
@@ -323,6 +325,9 @@ PCB_EDIT_FRAME::PCB_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
     m_constraintsPanel = new PANEL_CONSTRAINTS( this );
     m_gitCommitPane = new GIT_COMMIT_PANE( this );
 
+    m_liveDRC = std::make_unique<LIVE_DRC>( this );
+    m_onlineDRCPanel = new PANEL_ONLINE_DRC( this, m_liveDRC.get() );
+
     m_auimgr.SetManagedWindow( this );
 
     CreateInfoBar();
@@ -431,6 +436,16 @@ PCB_EDIT_FRAME::PCB_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
                       .DestroyOnClose( false )
                       .CloseButton( true )
                       .Hide() );
+
+    m_auimgr.AddPane( m_onlineDRCPanel, EDA_PANE().Name( OnlineDRCPaneName() )
+                      .Bottom().Layer( 2 )
+                      .Caption( _( "Online DRC" ) ).PaneBorder( false )
+                      .MinSize( FromDIP( wxSize( 360, 120 ) ) )
+                      .BestSize( FromDIP( wxSize( 700, 220 ) ) )
+                      .FloatingSize( FromDIP( wxSize( 700, 260 ) ) )
+                      .DestroyOnClose( false )
+                      .CloseButton( true )
+                      .Show() );
 
     m_auimgr.AddPane( m_gitCommitPane,
                       EDA_PANE()
@@ -828,6 +843,12 @@ PCB_EDIT_FRAME::~PCB_EDIT_FRAME()
         delete m_eventCounterTimer;
     }
 
+    // The checker's worker must stop before the board, the tools or the canvas go away
+    if( m_onlineDRCPanel )
+        m_onlineDRCPanel->Shutdown();
+
+    m_liveDRC.reset();
+
     // Close modeless dialogs
     wxWindow* drcDlg = wxWindow::FindWindowByName( DIALOG_DRC_WINDOW_NAME );
 
@@ -864,6 +885,18 @@ void PCB_EDIT_FRAME::ToggleConstraintsPanel()
     if( show && m_constraintsPanel )
         m_constraintsPanel->RefreshList();
 
+    m_auimgr.Update();
+}
+
+
+void PCB_EDIT_FRAME::ToggleOnlineDRCPanel()
+{
+    wxAuiPaneInfo& pane = m_auimgr.GetPane( OnlineDRCPaneName() );
+
+    if( !pane.IsOk() )
+        return;
+
+    pane.Show( !pane.IsShown() );
     m_auimgr.Update();
 }
 
@@ -1405,6 +1438,12 @@ void PCB_EDIT_FRAME::setupUIConditions()
                 return m_auimgr.GetPane( ConstraintsPaneName() ).IsShown();
             };
 
+    auto onlineDRCPaneCond =
+            [this] ( const SELECTION& )
+            {
+                return m_auimgr.GetPane( OnlineDRCPaneName() ).IsShown();
+            };
+
     auto designBlockCond =
             [ this ] (const SELECTION& aSel )
             {
@@ -1473,6 +1512,7 @@ void PCB_EDIT_FRAME::setupUIConditions()
     mgr->SetConditions( PCB_ACTIONS::showNetInspector,     CHECK( netInspectorCond ) );
     mgr->SetConditions( PCB_ACTIONS::showSearch,           CHECK( searchPaneCond ) );
     mgr->SetConditions( PCB_ACTIONS::showConstraintsPanel, CHECK( constraintsPaneCond ) );
+    mgr->SetConditions( PCB_ACTIONS::showOnlineDRCPanel, CHECK( onlineDRCPaneCond ) );
     mgr->SetConditions( PCB_ACTIONS::showDesignBlockPanel, CHECK( designBlockCond ) );
     mgr->SetConditions( ACTIONS::showGitCommitPane,        CHECK( gitCommitPaneCond ) );
 
@@ -2507,6 +2547,7 @@ void PCB_EDIT_FRAME::ShowChangedLanguage()
     m_auimgr.GetPane( m_selectionFilterPanel ).Caption( _( "Selection Filter" ) );
     m_auimgr.GetPane( m_propertiesPanel ).Caption( _( "Properties" ) );
     m_auimgr.GetPane( m_netInspectorPanel ).Caption( _( "Net Inspector" ) );
+    m_auimgr.GetPane( m_onlineDRCPanel ).Caption( _( "Online DRC" ) );
     m_auimgr.Update();
 
     UpdateTitle();

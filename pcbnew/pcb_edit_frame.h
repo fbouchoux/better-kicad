@@ -65,6 +65,8 @@ class DIALOG_BOARD_SETUP;
 class DIALOG_FOOTPRINT_FIELDS_TABLE;
 class PCB_DESIGN_BLOCK_PANE;
 class PANEL_CONSTRAINTS;
+class PANEL_ONLINE_DRC;
+class LIVE_DRC;
 class WX_INFOBAR;
 
 class KICAD_API_SERVER;
@@ -127,6 +129,12 @@ public:
      */
     static const wxString SearchPaneName() { return wxT( "Search" ); }
     static const wxString ConstraintsPaneName() { return wxT( "Constraints" ); }
+    static const wxString OnlineDRCPaneName() { return wxT( "OnlineDRC" ); }
+
+    void ToggleOnlineDRCPanel();
+
+    /// True while a tool is in the middle of an edit, such as a drag or a route.
+    bool IsInteractiveOperationInProgress() const { return interactiveOperationInProgress(); }
 
     /// Show/hide the dockable geometric-constraint list pane, refreshing it when shown (#2329).
     void ToggleConstraintsPanel();
@@ -910,6 +918,9 @@ private:
     PCB_DESIGN_BLOCK_PANE* m_designBlocksPane;
     // Tool Reset() reads this before the ctor creates the panel.
     PANEL_CONSTRAINTS* m_constraintsPanel = nullptr; ///< Dockable geometric-constraint list (#2329).
+
+    std::unique_ptr<LIVE_DRC> m_liveDRC;
+    PANEL_ONLINE_DRC*         m_onlineDRCPanel = nullptr;
 
     /// Secondary infobar that stacks above the main one; reserved for load-time
     /// notices (currently the WRL -> STEP migration prompt) that must not be

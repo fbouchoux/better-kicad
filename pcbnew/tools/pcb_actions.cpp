@@ -279,6 +279,13 @@ TOOL_ACTION PCB_ACTIONS::showConstraintsPanel( TOOL_ACTION_ARGS()
         .Tooltip( _( "Show/hide the geometric constraints panel" ) )
         .Icon( BITMAPS::measurement ) );
 
+TOOL_ACTION PCB_ACTIONS::showOnlineDRCPanel( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.EditorControl.showOnlineDRCPanel" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Online DRC" ) )
+        .Tooltip( _( "Show/hide the online DRC panel" ) )
+        .Icon( BITMAPS::drc ) );
+
 TOOL_ACTION PCB_ACTIONS::toggleAutoConstraints( TOOL_ACTION_ARGS()
         .Name( "pcbnew.ConstraintEditor.toggleAutoConstraints" )
         .Scope( AS_GLOBAL )

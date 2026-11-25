@@ -336,6 +336,7 @@ set( PCBNEW_DRC_SRCS
     drc/drc_creepage_utils.cpp
     drc/drc_creepage_engine.cpp
     drc/drc_report.cpp
+    drc/live_drc.cpp
     drc/drc_test_provider.cpp
     drc/drc_test_provider_annular_width.cpp
     drc/drc_test_provider_disallow.cpp
@@ -572,6 +573,7 @@ set( PCBNEW_CLASS_SRCS
     widgets/constraint_list_view.cpp
     widgets/panel_constraints.cpp
     widgets/panel_constraints_base.cpp
+    widgets/panel_online_drc.cpp
     widgets/panel_footprint_chooser.cpp
     widgets/panel_selection_filter.cpp
     widgets/panel_selection_filter_base.cpp

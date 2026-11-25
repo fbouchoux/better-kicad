@@ -26,6 +26,7 @@
 #include <pcb_marker.h>
 
 #include <functional>
+#include <memory>
 #include <set>
 
 class DRC_ENGINE;
@@ -33,24 +34,27 @@ class DRC_TEST_PROVIDER;
 class DRC_RULE;
 class DRC_CONSTRAINT;
 
+using DRC_TEST_PROVIDER_FACTORY = std::function<std::unique_ptr<DRC_TEST_PROVIDER>()>;
+
+/**
+ * Providers keep per-run state and a pointer to their engine, so every engine gets its own
+ * instances.  The registries hold factories only.
+ */
 class DRC_TEST_PROVIDER_REGISTRY
 {
 public:
-    DRC_TEST_PROVIDER_REGISTRY() {}
-
-    ~DRC_TEST_PROVIDER_REGISTRY();
-
     static DRC_TEST_PROVIDER_REGISTRY& Instance()
     {
         static DRC_TEST_PROVIDER_REGISTRY self;
         return self;
     }
 
-    void RegisterTestProvider( DRC_TEST_PROVIDER* provider ) { m_providers.push_back( provider ); }
-    std::vector<DRC_TEST_PROVIDER*> GetTestProviders() const { return m_providers; }
+    void RegisterTestProvider( DRC_TEST_PROVIDER_FACTORY aFactory ) { m_factories.push_back( std::move( aFactory ) ); }
+
+    std::vector<std::unique_ptr<DRC_TEST_PROVIDER>> CreateTestProviders() const;
 
 private:
-    std::vector<DRC_TEST_PROVIDER*> m_providers;
+    std::vector<DRC_TEST_PROVIDER_FACTORY> m_factories;
 };
 
 template<class T> class DRC_REGISTER_TEST_PROVIDER
@@ -58,8 +62,7 @@ template<class T> class DRC_REGISTER_TEST_PROVIDER
 public:
     DRC_REGISTER_TEST_PROVIDER()
     {
-        T* provider = new T;
-        DRC_TEST_PROVIDER_REGISTRY::Instance().RegisterTestProvider( provider );
+        DRC_TEST_PROVIDER_REGISTRY::Instance().RegisterTestProvider( []() { return std::make_unique<T>(); } );
     }
 };
 
@@ -67,21 +70,21 @@ public:
 class DRC_SHOWMATCHES_PROVIDER_REGISTRY
 {
 public:
-    DRC_SHOWMATCHES_PROVIDER_REGISTRY() {}
-
-    ~DRC_SHOWMATCHES_PROVIDER_REGISTRY();
-
     static DRC_SHOWMATCHES_PROVIDER_REGISTRY& Instance()
     {
         static DRC_SHOWMATCHES_PROVIDER_REGISTRY self;
         return self;
     }
 
-    void RegisterShowMatchesProvider( DRC_TEST_PROVIDER* provider ) { m_providers.push_back( provider ); }
-    std::vector<DRC_TEST_PROVIDER*> GetShowMatchesProviders() const { return m_providers; }
+    void RegisterShowMatchesProvider( DRC_TEST_PROVIDER_FACTORY aFactory )
+    {
+        m_factories.push_back( std::move( aFactory ) );
+    }
+
+    std::vector<std::unique_ptr<DRC_TEST_PROVIDER>> CreateShowMatchesProviders() const;
 
 private:
-    std::vector<DRC_TEST_PROVIDER*> m_providers;
+    std::vector<DRC_TEST_PROVIDER_FACTORY> m_factories;
 };
 
 template<class T> class DRC_REGISTER_SHOWMATCHES_PROVIDER
@@ -89,8 +92,8 @@ template<class T> class DRC_REGISTER_SHOWMATCHES_PROVIDER
 public:
     DRC_REGISTER_SHOWMATCHES_PROVIDER()
     {
-        T* provider = new T;
-        DRC_SHOWMATCHES_PROVIDER_REGISTRY::Instance().RegisterShowMatchesProvider( provider );
+        DRC_SHOWMATCHES_PROVIDER_REGISTRY::Instance().RegisterShowMatchesProvider(
+                []() { return std::make_unique<T>(); } );
     }
 };
 

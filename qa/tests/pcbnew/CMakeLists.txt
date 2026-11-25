@@ -277,6 +277,7 @@ set( QA_PCBNEW_SRCS
     drc/test_drc_issue23868.cpp
     drc/test_drc_issue24211.cpp
     drc/test_drc_physical_clearance.cpp
+    drc/test_live_drc.cpp
     drc/test_drc_prepared_candidates.cpp
     drc/test_drc_rule_document.cpp
     drc/test_drc_rule_editor.cpp
