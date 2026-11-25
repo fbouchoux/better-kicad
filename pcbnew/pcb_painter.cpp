@@ -84,6 +84,89 @@
 using namespace KIGFX;
 
 
+/// Net name without its sheet path, upper case, for matching naming conventions.
+static wxString padNetBaseName( const PAD& aPad )
+{
+    return aPad.GetShortNetname().AfterLast( '/' ).Upper();
+}
+
+
+static bool isGroundPad( const PAD& aPad )
+{
+    wxString net = padNetBaseName( aPad );
+
+    // GND, AGND, GND_A, VSS and their qualified forms
+    return net.StartsWith( wxT( "GND" ) ) || net.EndsWith( wxT( "GND" ) ) || net.Contains( wxT( "_GND_" ) )
+           || net.StartsWith( wxT( "VSS" ) ) || net.EndsWith( wxT( "VSS" ) ) || net.Contains( wxT( "_VSS_" ) );
+}
+
+
+static bool isNoConnectPad( const PAD& aPad )
+{
+    if( aPad.IsNoConnectPad() )
+        return true;
+
+    wxString function = aPad.GetPinFunction().Upper();
+    bool     numberedNc = function.length() > 2 && function.StartsWith( wxT( "NC" ) ) && wxIsdigit( function[2] );
+
+    if( function == wxT( "NC" ) || function == wxT( "N/C" ) || function == wxT( "DNC" )
+        || function.StartsWith( wxT( "NC_" ) ) || numberedNc )
+    {
+        return true;
+    }
+
+    // Imported designs sometimes carry the role in the net name instead of the pin type
+    wxString net = padNetBaseName( aPad );
+
+    return net == wxT( "NC" ) || net == wxT( "N/C" ) || net == wxT( "DNC" ) || net.StartsWith( wxT( "NC_" ) )
+           || net.StartsWith( wxT( "DNC_" ) ) || net.StartsWith( wxT( "UNCONNECTED-(" ) );
+}
+
+
+static bool isPowerPad( const PAD& aPad )
+{
+    wxString pinType = aPad.GetPinType().BeforeFirst( '+' );
+
+    if( pinType == wxT( "power_in" ) || pinType == wxT( "power_out" ) )
+        return true;
+
+    // Passive pads on conventionally named supply nets count too
+    wxString net = padNetBaseName( aPad );
+
+    return net.StartsWith( wxT( "+" ) ) || net.StartsWith( wxT( "VCC" ) ) || net.StartsWith( wxT( "VDD" ) )
+           || net.StartsWith( wxT( "VEE" ) ) || net.StartsWith( wxT( "VBAT" ) ) || net.StartsWith( wxT( "VIN" ) )
+           || net.StartsWith( wxT( "VOUT" ) ) || net.StartsWith( wxT( "PWR" ) );
+}
+
+
+/**
+ * Shade a copper layer color by the pad's electrical role: no-connect nearly black, ground
+ * darker, power lighter and more saturated, everything else unchanged.
+ */
+static COLOR4D smartPadColor( const PAD& aPad, const COLOR4D& aLayerColor )
+{
+    // Ground is checked before power, so a power_in pin on GND is ground
+    if( isNoConnectPad( aPad ) )
+        return aLayerColor.Darkened( 0.95 );
+
+    if( isGroundPad( aPad ) )
+        return aLayerColor.Darkened( 0.58 );
+
+    if( isPowerPad( aPad ) )
+    {
+        double hue, saturation, lightness;
+        aLayerColor.ToHSL( hue, saturation, lightness );
+
+        COLOR4D color;
+        color.FromHSL( hue, std::min( 1.0, saturation * 1.35 + 0.15 ), std::min( 1.0, lightness + 0.18 ) );
+        color.a = aLayerColor.a;
+        return color;
+    }
+
+    return aLayerColor;
+}
+
+
 PCBNEW_SETTINGS* pcbconfig()
 {
     return dynamic_cast<PCBNEW_SETTINGS*>( Kiface().KifaceSettings() );
@@ -199,6 +282,7 @@ void PCB_RENDER_SETTINGS::LoadDisplayOptions( const PCB_DISPLAY_OPTIONS& aOption
     m_ZoneDisplayMode     = aOptions.m_ZoneDisplayMode;
     m_ContrastModeDisplay = aOptions.m_ContrastModeDisplay;
     m_netColorMode        = aOptions.m_NetColorMode;
+    m_smartPadColors      = aOptions.m_SmartPadColors;
 
     m_trackOpacity    = aOptions.m_TrackOpacity;
     m_viaOpacity      = aOptions.m_ViaOpacity;
@@ -484,8 +568,28 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
     bool highlighted = m_highlightEnabled && m_highlightNetcodes.count( netCode );
     bool selected    = aItem->IsSelected();
 
+    // Smart pad colors shade pad copper by electrical role; tracks and the ratsnest keep theirs
+    if( m_smartPadColors && conItem && aItem->Type() == PCB_PAD_T && IsPadCopperLayer( originalLayer )
+        && IsCopperLayer( aLayer ) )
+    {
+        COLOR4D padColor = smartPadColor( *static_cast<const PAD*>( aItem ), m_layerColors.at( aLayer ) );
+
+        if( selected )
+        {
+            padColor.Brighten( m_selectFactor );
+        }
+        else if( m_highlightEnabled )
+        {
+            if( highlighted )
+                padColor.Brighten( m_highlightFactor );
+            else if( !IsCanvasFadedLayer( originalLayer ) )
+                padColor.Darken( 1.0 - m_highlightFactor );
+        }
+
+        color = padColor;
+    }
     // Apply net color overrides
-    if( conItem && m_netColorMode == NET_COLOR_MODE::ALL && IsCopperLayer( aLayer ) )
+    else if( conItem && m_netColorMode == NET_COLOR_MODE::ALL && IsCopperLayer( aLayer ) )
     {
         COLOR4D netColor = COLOR4D::UNSPECIFIED;
 

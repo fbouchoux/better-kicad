@@ -32,6 +32,7 @@
 #include <pcb_track.h>
 #include <pcb_view.h>
 #include <footprint.h>
+#include <netinfo.h>
 #include <pad.h>
 #include <gal/gal_display_options.h>
 #include <gal/graphics_abstraction_layer.h>
@@ -104,6 +105,74 @@ BOOST_AUTO_TEST_CASE( AllPointLayersMapToLayerPoints )
                              "POINT layer for " + std::to_string( boardLayer )
                              + " should have LAYER_POINTS color" );
     }
+}
+
+
+/**
+ * Smart pad colors shade pads by electrical role and leave tracks alone.
+ */
+BOOST_AUTO_TEST_CASE( SmartPadColorsUseElectricalRole )
+{
+    const KIGFX::COLOR4D layerColor( 0.25, 0.45, 0.7, 1.0 );
+    m_settings.SetLayerColor( F_Cu, layerColor );
+    m_settings.SetSmartPadColors( true );
+
+    BOARD board;
+
+    NETINFO_ITEM* groundNet = new NETINFO_ITEM( &board, wxT( "/power/AGND" ), 1 );
+    NETINFO_ITEM* powerNet = new NETINFO_ITEM( &board, wxT( "+3V3" ), 2 );
+    NETINFO_ITEM* signalNet = new NETINFO_ITEM( &board, wxT( "SCLK" ), 3 );
+    board.Add( groundNet );
+    board.Add( powerNet );
+    board.Add( signalNet );
+
+    FOOTPRINT* footprint = new FOOTPRINT( &board );
+    board.Add( footprint );
+
+    auto addPad =
+            [&]( const wxString& aPinType, NETINFO_ITEM* aNet )
+            {
+                PAD* pad = new PAD( footprint );
+                pad->SetAttribute( PAD_ATTRIB::SMD );
+                pad->SetLayerSet( PAD::SMDMask() );
+                pad->SetPinType( aPinType );
+
+                if( aNet )
+                    pad->SetNet( aNet );
+
+                footprint->Add( pad );
+                return pad;
+            };
+
+    // A power_in pin on a ground net is ground
+    PAD* groundPad = addPad( wxT( "power_in" ), groundNet );
+    PAD* powerPad = addPad( wxT( "passive" ), powerNet );
+    PAD* signalPad = addPad( wxT( "input" ), signalNet );
+    PAD* noConnectPad = addPad( wxT( "passive" ), nullptr );
+    noConnectPad->SetPinFunction( wxT( "NC" ) );
+    PAD* typedNoConnectPad = addPad( wxT( "input+no_connect" ), nullptr );
+
+    const int padLayer = PAD_COPPER_LAYER_FOR( F_Cu );
+
+    KIGFX::COLOR4D groundColor = m_settings.GetColor( groundPad, padLayer );
+    KIGFX::COLOR4D powerColor = m_settings.GetColor( powerPad, padLayer );
+    KIGFX::COLOR4D signalColor = m_settings.GetColor( signalPad, padLayer );
+    KIGFX::COLOR4D noConnectColor = m_settings.GetColor( noConnectPad, padLayer );
+    KIGFX::COLOR4D typedNoConnectColor = m_settings.GetColor( typedNoConnectPad, padLayer );
+
+    BOOST_CHECK( powerColor.GetBrightness() > layerColor.GetBrightness() );
+    BOOST_CHECK( groundColor.GetBrightness() < layerColor.GetBrightness() );
+    BOOST_CHECK( noConnectColor.GetBrightness() < groundColor.GetBrightness() );
+    BOOST_CHECK( typedNoConnectColor == noConnectColor );
+    BOOST_CHECK( signalColor == layerColor );
+
+    PCB_TRACK track( &board );
+    track.SetLayer( F_Cu );
+    track.SetNet( powerNet );
+    BOOST_CHECK( m_settings.GetColor( &track, F_Cu ) == layerColor );
+
+    m_settings.SetSmartPadColors( false );
+    BOOST_CHECK( m_settings.GetColor( powerPad, padLayer ) == layerColor );
 }
 
 

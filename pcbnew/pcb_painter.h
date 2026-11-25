@@ -169,6 +169,9 @@ public:
     NET_COLOR_MODE GetNetColorMode() const { return m_netColorMode; }
     void SetNetColorMode( NET_COLOR_MODE aMode ) { m_netColorMode = aMode; }
 
+    bool GetSmartPadColors() const { return m_smartPadColors; }
+    void SetSmartPadColors( bool aEnabled ) { m_smartPadColors = aEnabled; }
+
     bool IsGroupEditModeActive() const { return m_groupEditModeActive; }
     void SetGroupEditModeActive( bool aActive ) { m_groupEditModeActive = aActive; }
 
@@ -214,6 +217,9 @@ protected:
 
     /// How to display nets and netclasses with color overrides
     NET_COLOR_MODE     m_netColorMode;
+
+    /// Shade pads by electrical role, overriding net colors on pads
+    bool               m_smartPadColors = false;
 
     /// Overrides for specific netclass colors
     std::map<wxString, KIGFX::COLOR4D> m_netclassColors;

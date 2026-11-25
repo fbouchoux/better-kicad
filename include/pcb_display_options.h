@@ -50,6 +50,9 @@ public:
     /// How to use color overrides on specific nets and netclasses
     NET_COLOR_MODE     m_NetColorMode;
 
+    /// Shade pads by electrical role (power, ground, no-connect) - stored in the project
+    bool               m_SmartPadColors = false;
+
     // These opacity overrides multiply with any opacity in the base layer color
 
     double             m_TrackOpacity;     ///< Opacity override for all tracks

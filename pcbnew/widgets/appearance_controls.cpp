@@ -762,6 +762,13 @@ void APPEARANCE_CONTROLS::createControls()
 
     netDisplayOptionsSizer->Add( netColorSizer, 0, wxEXPAND | wxBOTTOM, 5 );
 
+    m_cbSmartPadColors = new wxCheckBox( netDisplayPane, wxID_ANY, _( "Smart pad colors" ) );
+    m_cbSmartPadColors->SetFont( infoFont );
+    m_cbSmartPadColors->SetToolTip( _( "Shade pads by electrical role in their copper layer color: power "
+                                       "brighter, ground darker, no-connect nearly black" ) );
+
+    netDisplayOptionsSizer->Add( m_cbSmartPadColors, 0, wxLEFT | wxBOTTOM, 5 );
+
     //// Ratsnest display
 
     hotkey = PCB_ACTIONS::ratsnestModeCycle.GetHotKey();
@@ -825,6 +832,7 @@ void APPEARANCE_CONTROLS::createControls()
     m_rbNetColorAll->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onNetColorMode, this );
     m_rbNetColorOff->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onNetColorMode, this );
     m_rbNetColorRatsnest->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onNetColorMode, this );
+    m_cbSmartPadColors->Bind( wxEVT_CHECKBOX, &APPEARANCE_CONTROLS::onSmartPadColors, this );
 
     m_rbRatsnestAllLayers->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onRatsnestMode, this );
     m_rbRatsnestVisLayers->Bind( wxEVT_RADIOBUTTON, &APPEARANCE_CONTROLS::onRatsnestMode, this );
@@ -1524,6 +1532,8 @@ void APPEARANCE_CONTROLS::UpdateDisplayOptions()
     case NET_COLOR_MODE::RATSNEST: m_rbNetColorRatsnest->SetValue( true ); break;
     case NET_COLOR_MODE::OFF:      m_rbNetColorOff->SetValue( true );      break;
     }
+
+    m_cbSmartPadColors->SetValue( options.m_SmartPadColors );
 
     m_cbFlipBoard->SetValue( m_frame->GetDisplayOptions().m_FlipBoardView );
 
@@ -2739,6 +2749,10 @@ void APPEARANCE_CONTROLS::rebuildNets()
     m_rbNetColorOff->SetLabel( _( "None" ) );
     m_rbNetColorOff->SetToolTip( _( "Net and netclass colors are not shown" ) );
 
+    m_cbSmartPadColors->SetLabel( _( "Smart pad colors" ) );
+    m_cbSmartPadColors->SetToolTip( _( "Shade pads by electrical role in their copper layer color: power "
+                                       "brighter, ground darker, no-connect nearly black" ) );
+
     hotkey = PCB_ACTIONS::ratsnestModeCycle.GetHotKey();
 
     if( hotkey )
@@ -3464,6 +3478,17 @@ void APPEARANCE_CONTROLS::onNetColorMode( wxCommandEvent& aEvent )
         options.m_NetColorMode = NET_COLOR_MODE::RATSNEST;
     else
         options.m_NetColorMode = NET_COLOR_MODE::OFF;
+
+    m_frame->SetDisplayOptions( options );
+    m_frame->GetCanvas()->GetView()->UpdateAllLayersColor();
+    passOnFocus();
+}
+
+
+void APPEARANCE_CONTROLS::onSmartPadColors( wxCommandEvent& aEvent )
+{
+    PCB_DISPLAY_OPTIONS options = m_frame->GetDisplayOptions();
+    options.m_SmartPadColors = m_cbSmartPadColors->GetValue();
 
     m_frame->SetDisplayOptions( options );
     m_frame->GetCanvas()->GetView()->UpdateAllLayersColor();

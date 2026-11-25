@@ -128,6 +128,9 @@ public:
     /// The current net color mode
     NET_COLOR_MODE m_NetColorMode;
 
+    /// Whether pads are shaded by electrical role
+    bool m_SmartPadColors = false;
+
     /// The state of the net inspector panel
     PANEL_NET_INSPECTOR_SETTINGS m_NetInspectorPanel;
 

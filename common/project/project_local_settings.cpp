@@ -208,6 +208,8 @@ PROJECT_LOCAL_SETTINGS::PROJECT_LOCAL_SETTINGS( PROJECT* aProject, const wxStrin
                            &m_NetColorMode, NET_COLOR_MODE::RATSNEST, NET_COLOR_MODE::OFF,
                            NET_COLOR_MODE::ALL ) );
 
+    m_params.emplace_back( new PARAM<bool>( "board.smart_pad_colors", &m_SmartPadColors, false ) );
+
     m_params.emplace_back( new PARAM<bool>( "board.auto_track_width",
                            &m_AutoTrackWidth, true ) );
 
