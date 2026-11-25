@@ -31,6 +31,8 @@
 #include <wx/filedlg.h>
 #include <wx/hyperlink.h>
 #include <wx/socket.h>
+#include <wx/statusbr.h>
+#include <wx/utils.h>
 #include <wx/wupdlock.h>
 
 #include <advanced_config.h>
@@ -85,6 +87,8 @@
 #include <board_text_var_adapter.h>
 #include <text_var_dependency.h>
 #include <view/view.h>
+#include <view/view_controls.h>
+#include <string_utils.h>
 #include <wildcards_and_files_ext.h>
 #include <functional>
 #include <pcb_barcode.h>
@@ -883,6 +887,10 @@ void PCB_EDIT_FRAME::detachTextVarTracker()
 
 void PCB_EDIT_FRAME::SetBoard( BOARD* aBoard, bool aBuildConnectivity, PROGRESS_REPORTER* aReporter )
 {
+    m_hoverNetItem.reset();
+    m_hoverNetStatus.clear();
+    m_hoverNetPosValid = false;
+
     // PCB_BASE_FRAME::SetBoard() deletes m_pcb; detach tracker consumers first.
     if( m_pcb )
     {
@@ -2577,6 +2585,154 @@ void PCB_EDIT_FRAME::OnBoardItemsChanged( BOARD& aBoard, std::vector<BOARD_ITEM*
 
     if( rebuilt && selTool && !selTool->GetSelection().Empty() )
         selTool->RebuildSelection();
+}
+
+
+void PCB_EDIT_FRAME::UpdateStatusBar()
+{
+    PCB_BASE_EDIT_FRAME::UpdateStatusBar();
+    updateNetHoverStatus();
+}
+
+
+void PCB_EDIT_FRAME::clearNetHoverStatus()
+{
+    if( !m_hoverNetStatus.IsEmpty() && GetStatusBar()
+        && GetStatusBar()->GetStatusText( 0 ) == m_hoverNetStatus )
+    {
+        SetStatusText( wxEmptyString, 0 );
+    }
+
+    m_hoverNetStatus.clear();
+    m_hoverNetItem.reset();
+}
+
+
+void PCB_EDIT_FRAME::updateNetHoverStatus()
+{
+    BOARD* board = GetBoard();
+
+    if( !board || !GetCanvas() || !GetCanvas()->GetView() )
+    {
+        clearNetHoverStatus();
+        m_hoverNetPosValid = false;
+        return;
+    }
+
+    KIGFX::VIEW_CONTROLS* controls = GetCanvas()->GetViewControls();
+    KIGFX::VIEW*          view = GetCanvas()->GetView();
+    VECTOR2I              screenPos = controls->GetMousePosition( false );
+    PCB_LAYER_ID          layer = GetActiveLayer();
+
+    // Key presses, zooming and other events that leave the pointer in place change nothing
+    if( m_hoverNetPosValid && screenPos == m_hoverNetScreenPos && layer == m_hoverNetLayer )
+        return;
+
+    wxMouseState mouse = wxGetMouseState();
+
+    if( interactiveOperationInProgress() || mouse.LeftIsDown() || mouse.MiddleIsDown()
+        || mouse.RightIsDown() )
+    {
+        clearNetHoverStatus();
+        m_hoverNetPosValid = false;
+        return;
+    }
+
+    m_hoverNetScreenPos = screenPos;
+    m_hoverNetLayer = layer;
+    m_hoverNetPosValid = true;
+
+    VECTOR2I cursor = controls->GetMousePosition();
+
+    auto hitTest =
+            [&]( BOARD_CONNECTED_ITEM* aItem ) -> bool
+            {
+                if( !aItem || !aItem->IsOnLayer( layer ) || !view->IsVisible( aItem ) )
+                    return false;
+
+                switch( aItem->Type() )
+                {
+                case PCB_PAD_T:   return static_cast<PAD*>( aItem )->HitTest( cursor, 0, layer );
+                case PCB_VIA_T:   return aItem->GetEffectiveShape( layer )->Collide( cursor );
+                case PCB_TRACE_T:
+                case PCB_ARC_T:   return aItem->HitTest( cursor );
+                default:          return false;
+                }
+            };
+
+    BOARD_CONNECTED_ITEM* hovered = nullptr;
+
+    // Moving within the previous item needs no spatial query
+    if( m_hoverNetItem )
+        hovered = dynamic_cast<BOARD_CONNECTED_ITEM*>( board->ResolveItem( *m_hoverNetItem, true ) );
+
+    if( !hitTest( hovered ) )
+    {
+        hovered = nullptr;
+
+        auto queryLayer =
+                [&]( int aViewLayer )
+                {
+                    if( hovered )
+                        return;
+
+                    view->Query( aViewLayer, BOX2I( cursor, VECTOR2I( 1, 1 ) ),
+                                 [&]( KIGFX::VIEW_ITEM* aViewItem ) -> bool
+                                 {
+                                     if( !aViewItem->IsBOARD_ITEM() )
+                                         return true;
+
+                                     BOARD_ITEM* item = static_cast<BOARD_ITEM*>( aViewItem );
+
+                                     if( !item->IsConnected() )
+                                         return true;
+
+                                     BOARD_CONNECTED_ITEM* connected =
+                                             static_cast<BOARD_CONNECTED_ITEM*>( item );
+
+                                     if( !hitTest( connected ) )
+                                         return true;
+
+                                     hovered = connected;
+                                     return false;
+                                 } );
+                };
+
+        if( IsCopperLayer( layer ) )
+        {
+            queryLayer( PAD_COPPER_LAYER_FOR( layer ) );
+            queryLayer( VIA_COPPER_LAYER_FOR( layer ) );
+        }
+
+        queryLayer( layer );
+    }
+
+    wxString status;
+
+    if( hovered )
+    {
+        m_hoverNetItem = hovered->m_Uuid;
+        status = wxString::Format( _( "Net: %s" ), hovered->GetNetCode() > 0
+                                                           ? UnescapeString( hovered->GetNetname() )
+                                                           : _( "<no net>" ) );
+    }
+    else
+    {
+        m_hoverNetItem.reset();
+    }
+
+    if( status == m_hoverNetStatus )
+        return;
+
+    if( status.IsEmpty() )
+    {
+        clearNetHoverStatus();
+    }
+    else
+    {
+        m_hoverNetStatus = status;
+        SetStatusText( status, 0 );
+    }
 }
 
 

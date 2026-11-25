@@ -787,6 +787,18 @@ void VIEW::Query( const BOX2I& aRect, const std::function<bool( VIEW_ITEM* )>& a
 }
 
 
+void VIEW::Query( int aLayer, const BOX2I& aRect,
+                  const std::function<bool( VIEW_ITEM* )>& aFunc ) const
+{
+    auto it = m_layers.find( aLayer );
+
+    if( it == m_layers.end() || it->second.displayOnly || !it->second.visible )
+        return;
+
+    it->second.items->Query( aRect, aFunc );
+}
+
+
 VECTOR2D VIEW::ToWorld( const VECTOR2D& aCoord, bool aAbsolute ) const
 {
     const MATRIX3x3D& matrix = m_gal->GetScreenWorldMatrix();

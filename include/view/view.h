@@ -134,6 +134,16 @@ public:
     void Query( const BOX2I& aRect, const std::function<bool( VIEW_ITEM* )>& aFunc ) const;
 
     /**
+     * Run a function on the visible items of a single layer that touch or are within \a aRect.
+     *
+     * @param aLayer is the view layer to query.
+     * @param aRect is the area to query.
+     * @param aFunc the function to be executed; return true to continue, false to end query.
+     */
+    void Query( int aLayer, const BOX2I& aRect,
+                const std::function<bool( VIEW_ITEM* )>& aFunc ) const;
+
+    /**
      * Set the item visibility.
      *
      * @param aItem: the item to modify.

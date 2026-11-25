@@ -26,6 +26,7 @@
 #include <board.h>
 #include <mail_type.h>
 #include <settings/app_settings.h>
+#include <optional>
 #include <variant>
 
 class PCB_SCREEN;
@@ -302,6 +303,11 @@ public:
      * to update auxiliary information.
      */
     void OnModify() override;
+
+    /**
+     * Update the standard status fields and the net of the copper item under the cursor.
+     */
+    void UpdateStatusBar() override;
 
     /**
      * Keep the selection and view in step with generated tables rebuilt outside a commit.
@@ -776,6 +782,16 @@ protected:
     bool interactiveOperationInProgress() const;
 
     /**
+     * Show the net of the pad, via or track under the cursor on the active layer.
+     */
+    void updateNetHoverStatus();
+
+    /**
+     * Remove the hovered net hint, leaving status text set by anything else untouched.
+     */
+    void clearNetHoverStatus();
+
+    /**
      * Load the given filename but sets the path to the current project path.
      *
      * @param aFileName full file path of file to be imported.
@@ -922,6 +938,13 @@ private:
     KIID_PATH         m_lastSchematicSheetPath;
 
     int               m_ctrlWheelRotation = 0;         ///< Ctrl+wheel rotation short of a notch
+
+    // Hovered net hint; the last query is cached so non-motion events stay cheap
+    std::optional<KIID> m_hoverNetItem;
+    wxString            m_hoverNetStatus;
+    VECTOR2I            m_hoverNetScreenPos;
+    PCB_LAYER_ID        m_hoverNetLayer = UNDEFINED_LAYER;
+    bool                m_hoverNetPosValid = false;
 
     std::unique_ptr<API_HANDLER_PCB>    m_apiHandler;
     std::unique_ptr<API_HANDLER_COMMON> m_apiHandlerCommon;
