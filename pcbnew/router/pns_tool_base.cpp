@@ -27,6 +27,7 @@ using namespace std::placeholders;
 #include <geometry/geometry_utils.h>
 #include <pcb_painter.h>
 #include <pcbnew_settings.h>
+#include <snap/snap_resolver.h>
 #include <view/view_controls.h>
 
 #include <tool/tool_manager.h>
@@ -118,10 +119,15 @@ void TOOL_BASE::setSelectableItemMask( int aMask )
 ITEM* TOOL_BASE::pickSingleItem( const VECTOR2I& aWhere, NET_HANDLE aNet, int aLayer,
                                  bool aIgnorePads, const std::vector<ITEM*> aAvoidItems, int aPermittedItemMask )
 {
-    int tl = aLayer > 0 ? aLayer
-                        : m_router->GetInterface()->GetPNSLayerFromBoardLayer(
-                                  static_cast<PCB_LAYER_ID>( getView()->GetTopLayer() ) );
-    int maxSlopRadius = std::max( m_gridHelper->GetGrid().x, m_gridHelper->GetGrid().y );
+    int tl = aLayer >= 0 ? aLayer
+                         : m_router->GetInterface()->GetPNSLayerFromBoardLayer(
+                                   static_cast<PCB_LAYER_ID>( getView()->GetTopLayer() ) );
+
+    // A hidden grid must not size the capture area, or a coarse grid pulls the cursor onto
+    // pads far away
+    int maxSlopRadius = m_gridHelper->GetUseGrid()
+                                ? std::max( m_gridHelper->GetGrid().x, m_gridHelper->GetGrid().y )
+                                : std::max( 1, KiROUND( getView()->ToWorld( SNAP_SCREEN_RADIUS ) ) );
 
     static const int candidateCount = 5;
     ITEM* prioritized[candidateCount];
