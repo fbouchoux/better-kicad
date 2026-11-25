@@ -113,6 +113,11 @@ public:
     int Swap( const TOOL_EVENT& aEvent );
 
     /**
+     * Move the selected single-layer items to the layer in the event parameter.
+     */
+    int MoveToLayer( const TOOL_EVENT& aEvent );
+
+    /**
      * Swap nets between selected pads and propagate to connected copper items
      * (tracks, arcs, vias) for unconstrained pin swapping.
      */

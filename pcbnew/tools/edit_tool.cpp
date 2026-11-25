@@ -139,6 +139,33 @@ static const std::vector<KICAD_T> connectedTypes = { PCB_TRACE_T, PCB_ARC_T, PCB
 
 static const std::vector<KICAD_T> routableTypes = { PCB_TRACE_T, PCB_ARC_T, PCB_VIA_T, PCB_PAD_T, PCB_FOOTPRINT_T };
 
+// Items that live on exactly one layer, so Move to Layer is a plain SetLayer()
+static const std::vector<KICAD_T> singleLayerTypes = {
+    PCB_SHAPE_T,          PCB_REFERENCE_IMAGE_T, PCB_FIELD_T,         PCB_TEXT_T,
+    PCB_TEXTBOX_T,        PCB_BARCODE_T,         PCB_TABLE_T,         PCB_DRILL_CHART_T,
+    PCB_STACKUP_TABLE_T,  PCB_TRACE_T,           PCB_ARC_T,           PCB_DIMENSION_T,
+    PCB_DIM_ALIGNED_T,    PCB_DIM_LEADER_T,      PCB_DIM_CENTER_T,    PCB_DIM_RADIAL_T,
+    PCB_DIM_ORTHOGONAL_T, PCB_TARGET_T,
+};
+
+
+static bool canMoveToLayer( const SELECTION& aSelection )
+{
+    return !aSelection.Empty() && aSelection.OnlyContains( singleLayerTypes );
+}
+
+
+/// Layers a selection can move to: tracks and arcs only to copper.
+static LSET moveToLayerTargets( const BOARD* aBoard, const SELECTION& aSelection )
+{
+    LSET layers = aBoard->GetEnabledLayers();
+
+    if( aSelection.HasType( PCB_TRACE_T ) || aSelection.HasType( PCB_ARC_T ) )
+        layers &= LSET::AllCuMask();
+
+    return layers;
+}
+
 
 // Types with no Mirror() override, which would fall through to the warning-dialog
 // BOARD_ITEM::Mirror.
@@ -620,6 +647,65 @@ static std::shared_ptr<ACTION_MENU> makeGateSwapMenu( TOOL_INTERACTIVE* aTool )
 };
 
 
+class MOVE_TO_LAYER_MENU : public ACTION_MENU
+{
+public:
+    MOVE_TO_LAYER_MENU() :
+            ACTION_MENU( true )
+    {
+        SetIcon( BITMAPS::swap_layer );
+        SetTitle( _( "Move to Layer" ) );
+    }
+
+protected:
+    ACTION_MENU* create() const override { return new MOVE_TO_LAYER_MENU(); }
+
+    void update() override
+    {
+        Clear();
+
+        PCB_BASE_FRAME* frame = dynamic_cast<PCB_BASE_FRAME*>( getToolManager()->GetToolHolder() );
+        const SELECTION& sel = getToolManager()->GetTool<PCB_SELECTION_TOOL>()->GetSelection();
+
+        if( !frame || !frame->GetBoard() || !canMoveToLayer( sel ) )
+            return;
+
+        // Check the layer the whole selection is on, if there is one
+        PCB_LAYER_ID common = static_cast<const BOARD_ITEM*>( sel.Front() )->GetLayer();
+
+        for( const EDA_ITEM* item : sel )
+        {
+            if( static_cast<const BOARD_ITEM*>( item )->GetLayer() != common )
+                common = UNDEFINED_LAYER;
+        }
+
+        for( PCB_LAYER_ID layer : moveToLayerTargets( frame->GetBoard(), sel ).UIOrder() )
+        {
+            wxMenuItem* item = AppendRadioItem( ID_POPUP_PCB_MOVE_TO_LAYER_BASE + layer,
+                                                frame->GetBoard()->GetLayerName( layer ) );
+
+            if( layer == common )
+                item->Check();
+        }
+    }
+
+    OPT_TOOL_EVENT eventHandler( const wxMenuEvent& aEvent ) override
+    {
+        int id = aEvent.GetId();
+
+        if( id >= ID_POPUP_PCB_MOVE_TO_LAYER_BASE && id <= ID_POPUP_PCB_MOVE_TO_LAYER_LAST )
+        {
+            TOOL_EVENT evt = PCB_ACTIONS::moveToLayer.MakeEvent();
+            evt.SetParameter( static_cast<PCB_LAYER_ID>( id - ID_POPUP_PCB_MOVE_TO_LAYER_BASE ) );
+
+            return OPT_TOOL_EVENT( evt );
+        }
+
+        return OPT_TOOL_EVENT();
+    }
+};
+
+
 bool EDIT_TOOL::Init()
 {
     // Find the selection tool, so they can cooperate
@@ -639,6 +725,10 @@ bool EDIT_TOOL::Init()
 
     std::shared_ptr<ACTION_MENU> gateSwapSubMenu = makeGateSwapMenu( this );
     m_selectionTool->GetToolMenu().RegisterSubMenu( gateSwapSubMenu );
+
+    std::shared_ptr<ACTION_MENU> moveToLayerSubMenu = std::make_shared<MOVE_TO_LAYER_MENU>();
+    moveToLayerSubMenu->SetTool( this );
+    m_selectionTool->GetToolMenu().RegisterSubMenu( moveToLayerSubMenu );
 
     std::shared_ptr<CONDITIONAL_MENU> fpAttributesMenu = std::make_shared<CONDITIONAL_MENU>( this );
     fpAttributesMenu->SetUntranslatedTitle( _HKI( "Attributes" ) );
@@ -906,6 +996,7 @@ bool EDIT_TOOL::Init()
                                                       && SELECTION_CONDITIONS::OnlyTypes( GENERAL_COLLECTOR::DraggableItems )
                                                       && !SELECTION_CONDITIONS::OnlyTypes( footprintTypes ) );
     menu.AddItem( PCB_ACTIONS::flip,              SELECTION_CONDITIONS::NotEmpty );
+    menu.AddMenu( moveToLayerSubMenu.get(),       SELECTION_CONDITION( canMoveToLayer ) && notMovingCondition );
 
     menu.AddItem( PCB_ACTIONS::swap,              SELECTION_CONDITIONS::MoreThan( 1 ) );
     menu.AddItem( PCB_ACTIONS::swapPadNets,       SELECTION_CONDITIONS::MoreThan( 1 )
@@ -1423,6 +1514,51 @@ int EDIT_TOOL::ChangeTrackLayer( const TOOL_EVENT& aEvent )
         m_toolMgr->ProcessEvent( EVENTS::SelectedItemsModified );
     }
 
+    return 0;
+}
+
+
+int EDIT_TOOL::MoveToLayer( const TOOL_EVENT& aEvent )
+{
+    if( isRouterActive() )
+    {
+        wxBell();
+        return 0;
+    }
+
+    PCB_LAYER_ID layer = aEvent.Parameter<PCB_LAYER_ID>();
+
+    const PCB_SELECTION& selection = m_selectionTool->RequestSelection(
+            []( const VECTOR2I& aPt, GENERAL_COLLECTOR& aCollector, PCB_SELECTION_TOOL* sTool )
+            {
+                sTool->FilterCollectorForLockedItems( aCollector );
+            } );
+
+    m_selectionTool->ReportFilteredLockedItems();
+
+    if( !canMoveToLayer( selection ) || !moveToLayerTargets( board(), selection ).Contains( layer ) )
+        return 0;
+
+    BOARD_COMMIT commit( this );
+
+    for( EDA_ITEM* item : selection )
+    {
+        BOARD_ITEM* boardItem = static_cast<BOARD_ITEM*>( item );
+
+        if( boardItem->GetLayer() == layer )
+            continue;
+
+        commit.Modify( boardItem, nullptr, RECURSE_MODE::RECURSE );
+        boardItem->SetLayer( layer );
+    }
+
+    if( !commit.Empty() )
+        commit.Push( _( "Move to Layer" ) );
+
+    if( selection.IsHover() )
+        m_toolMgr->RunAction( ACTIONS::selectionClear );
+
+    m_toolMgr->ProcessEvent( EVENTS::SelectedItemsModified );
     return 0;
 }
 
@@ -4364,6 +4500,7 @@ void EDIT_TOOL::setTransitions()
     Go( &EDIT_TOOL::Mirror,                   PCB_ACTIONS::mirrorV.MakeEvent() );
     Go( &EDIT_TOOL::MirrorInteractive,        PCB_ACTIONS::mirrorInteractive.MakeEvent() );
     Go( &EDIT_TOOL::Swap,                     PCB_ACTIONS::swap.MakeEvent() );
+    Go( &EDIT_TOOL::MoveToLayer,              PCB_ACTIONS::moveToLayer.MakeEvent() );
     Go( &EDIT_TOOL::SwapPadNets,              PCB_ACTIONS::swapPadNets.MakeEvent() );
     Go( &EDIT_TOOL::SwapGateNets,             PCB_ACTIONS::swapGateNets.MakeEvent() );
     Go( &EDIT_TOOL::PackAndMoveFootprints,    PCB_ACTIONS::packAndMoveFootprints.MakeEvent() );

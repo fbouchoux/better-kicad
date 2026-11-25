@@ -132,6 +132,9 @@ public:
     /// Swapping of selected items
     static TOOL_ACTION swap;
 
+    /// Move the selected items to the PCB_LAYER_ID parameter
+    static TOOL_ACTION moveToLayer;
+
     /// Swap nets between selected pads/gates (and connected copper)
     static TOOL_ACTION swapPadNets;
     static TOOL_ACTION swapGateNets;
