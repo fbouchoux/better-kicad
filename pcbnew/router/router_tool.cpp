@@ -2110,18 +2110,21 @@ int ROUTER_TOOL::onSmartViaCommand( const TOOL_EVENT& aEvent )
 }
 
 
-bool ROUTER_TOOL::HandleSmartViaWheel( int aRotation )
+bool ROUTER_TOOL::HandleSmartViaWheel( int aNotches )
 {
-    if( aRotation == 0 || !IsToolActive() || !m_router->RoutingInProgress()
-        || m_router->GetState() != PNS::ROUTER::ROUTE_TRACK || !m_router->Placer()
-        || m_router->Mode() != PNS::PNS_MODE_ROUTE_SINGLE )
+    if( !IsToolActive() || !m_router->RoutingInProgress() || m_router->GetState() != PNS::ROUTER::ROUTE_TRACK
+        || !m_router->Placer() || m_router->Mode() != PNS::PNS_MODE_ROUTE_SINGLE )
     {
         return false;
     }
 
-    TOOL_EVENT event = ( aRotation > 0 ? ACT_SmartViaNext : ACT_SmartViaPrevious ).MakeEvent();
-    event.SetMousePosition( controls()->GetMousePosition() );
-    onSmartViaCommand( event );
+    for( int ii = 0; ii < std::abs( aNotches ); ++ii )
+    {
+        TOOL_EVENT event = ( aNotches > 0 ? ACT_SmartViaNext : ACT_SmartViaPrevious ).MakeEvent();
+        event.SetMousePosition( controls()->GetMousePosition() );
+        onSmartViaCommand( event );
+    }
+
     return true;
 }
 

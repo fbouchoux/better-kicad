@@ -100,11 +100,12 @@ public:
     bool RoutingInProgress();
 
     /**
-     * Step a Smart Via one copper layer for a mouse wheel notch while routing.
+     * Step a Smart Via one copper layer per mouse wheel notch while routing, towards the
+     * bottom for positive counts.
      *
-     * @return true when the wheel event belongs to an active single track route.
+     * @return true when the wheel belongs to an active single track route, even for 0 notches.
      */
-    bool HandleSmartViaWheel( int aRotation );
+    bool HandleSmartViaWheel( int aNotches );
 
     void setTransitions() override;
 

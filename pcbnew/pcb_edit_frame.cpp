@@ -800,6 +800,8 @@ void PCB_EDIT_FRAME::OnCrossProbeFlashTimer( wxTimerEvent& aEvent )
 
 PCB_EDIT_FRAME::~PCB_EDIT_FRAME()
 {
+    GetCanvas()->Unbind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onCanvasCtrlWheel, this );
+
     // Always ensure that we are unregistered even in a close without graceful doCloseWindow()
     if( GetBoard() )
         Kiway().LocalHistory().UnregisterSaver( GetBoard() );
@@ -1158,6 +1160,77 @@ void PCB_EDIT_FRAME::setupTools()
 
     // Run the selection tool, it is supposed to be always active
     m_toolManager->InvokeTool( "common.InteractiveSelection" );
+
+    // Bound after the view controls so it sees wheel events first
+    GetCanvas()->Bind( wxEVT_MOUSEWHEEL, &PCB_EDIT_FRAME::onCanvasCtrlWheel, this );
+}
+
+
+void PCB_EDIT_FRAME::onCanvasCtrlWheel( wxMouseEvent& aEvent )
+{
+    if( !aEvent.ControlDown() || aEvent.ShiftDown() || aEvent.AltDown()
+        || aEvent.GetWheelAxis() != wxMOUSE_WHEEL_VERTICAL )
+    {
+        aEvent.Skip();
+        return;
+    }
+
+    ROUTER_TOOL* routerTool = m_toolManager->GetTool<ROUTER_TOOL>();
+    bool         routing = routerTool && routerTool->RoutingInProgress();
+
+    std::vector<PCB_TRACK*> tracks;
+
+    if( !routing && ToolStackIsEmpty() )
+    {
+        for( EDA_ITEM* item : m_toolManager->GetTool<PCB_SELECTION_TOOL>()->GetSelection() )
+        {
+            if( item->IsType( { PCB_TRACE_T, PCB_ARC_T } ) )
+                tracks.push_back( static_cast<PCB_TRACK*>( item ) );
+        }
+    }
+
+    // Nothing to act on: leave the wheel to zoom or pan
+    if( !routing && tracks.empty() )
+    {
+        m_ctrlWheelRotation = 0;
+        aEvent.Skip();
+        return;
+    }
+
+    // High resolution wheels and touchpads send fractions of a notch
+    int notchSize = std::max( 1, aEvent.GetWheelDelta() );
+
+    m_ctrlWheelRotation += aEvent.GetWheelRotation();
+
+    int notches = m_ctrlWheelRotation / notchSize;
+    m_ctrlWheelRotation -= notches * notchSize;
+
+    if( routing )
+    {
+        if( !routerTool->HandleSmartViaWheel( notches ) )
+            aEvent.Skip();
+
+        return;
+    }
+
+    if( notches == 0 )
+        return;
+
+    const int    step = pcbIUScale.mmToIU( 0.01 );
+    BOARD_COMMIT commit( this );
+
+    for( PCB_TRACK* track : tracks )
+    {
+        int width = std::max( step, track->GetWidth() + notches * step );
+
+        if( width == track->GetWidth() )
+            continue;
+
+        commit.Modify( track );
+        track->SetWidth( width );
+    }
+
+    commit.Push( _( "Change Track Width" ) );
 }
 
 

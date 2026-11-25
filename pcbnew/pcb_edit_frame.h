@@ -746,6 +746,9 @@ protected:
     void setupTools();
     void setupUIConditions() override;
 
+    /// Ctrl+wheel steps a Smart Via while routing, otherwise the selected track widths by 0.01 mm.
+    void onCanvasCtrlWheel( wxMouseEvent& aEvent );
+
     /**
      * Switch currently used canvas (Cairo / OpenGL).
      *
@@ -917,6 +920,8 @@ private:
     // Most recent schematic path (default to root), used in the footprint fields
     // table to enable the same schematic scope limiting as the symbol fields table
     KIID_PATH         m_lastSchematicSheetPath;
+
+    int               m_ctrlWheelRotation = 0;         ///< Ctrl+wheel rotation short of a notch
 
     std::unique_ptr<API_HANDLER_PCB>    m_apiHandler;
     std::unique_ptr<API_HANDLER_COMMON> m_apiHandlerCommon;
