@@ -323,7 +323,7 @@ bool PCB_RENDER_SETTINGS::GetLayerDim( int aLayer, COLOR4D& aToward, double& aKe
 
     // Net highlight fades every item it does not highlight towards black
     aToward = COLOR4D::BLACK;
-    aKeep = m_highlightEnabled ? m_highlightFactor : 1.0;
+    aKeep = netEmphasisActive() ? m_highlightFactor : 1.0;
 
     // Mirrors GetColor in dimmed high contrast, where zones, pad and via copper and clearance
     // outlines follow their copper layer
@@ -367,8 +367,8 @@ bool PCB_RENDER_SETTINGS::IsDimExempt( const VIEW_ITEM* aItem ) const
     if( item->IsBrightened() || item->IsSelected() )
         return true;
 
-    if( m_highlightEnabled && item->IsConnected() && item->IsOnCopperLayer() )
-        return m_highlightNetcodes.count( static_cast<const BOARD_CONNECTED_ITEM*>( item )->GetNetCode() ) > 0;
+    if( netEmphasisActive() && item->IsConnected() && item->IsOnCopperLayer() )
+        return isNetEmphasized( static_cast<const BOARD_CONNECTED_ITEM*>( item )->GetNetCode() );
 
     return false;
 }
@@ -565,7 +565,8 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
     if( conItem )
         netCode = conItem->GetNetCode();
 
-    bool highlighted = m_highlightEnabled && m_highlightNetcodes.count( netCode );
+    bool emphasis    = netEmphasisActive();
+    bool highlighted = isNetEmphasized( netCode );
     bool selected    = aItem->IsSelected();
 
     // Smart pad colors shade pad copper by electrical role; tracks and the ratsnest keep theirs
@@ -578,7 +579,7 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
         {
             padColor.Brighten( m_selectFactor );
         }
-        else if( m_highlightEnabled )
+        else if( emphasis )
         {
             if( highlighted )
                 padColor.Brighten( m_highlightFactor );
@@ -614,7 +615,7 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
             // Selection brightening overrides highlighting
             netColor.Brighten( m_selectFactor );
         }
-        else if( m_highlightEnabled )
+        else if( emphasis )
         {
             // Highlight brightens objects on all layers and darkens everything else. The canvas
             // darkens layers it fades itself, see GetLayerDim.
@@ -626,10 +627,10 @@ COLOR4D PCB_RENDER_SETTINGS::GetColor( const BOARD_ITEM* aItem, int aLayer ) con
 
         color = netColor;
     }
-    else if( !selected && m_highlightEnabled )
+    else if( !selected && emphasis )
     {
         // Single net highlight mode
-        if( m_highlightNetcodes.contains( netCode ) )
+        if( highlighted )
         {
             auto it_hi = m_layerColorsHi.find( aLayer );
             color = it_hi == m_layerColorsHi.end() ? color.Brightened( m_highlightFactor ) : it_hi->second;

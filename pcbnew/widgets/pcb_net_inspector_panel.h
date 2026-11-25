@@ -91,6 +91,8 @@ protected:
     void OnHeaderContextMenu( wxDataViewEvent& event );
     void OnNetsListContextMenu( wxDataViewEvent& event );
     void OnNetsListItemActivated( wxDataViewEvent& event );
+    void OnNetsListSelectionChanged( wxDataViewEvent& event );
+    void OnRatsnestFilterButton( wxCommandEvent& event );
     void OnColumnSorted( wxDataViewEvent& event );
 
 private:
@@ -168,6 +170,11 @@ private:
 
     /// Highlight the currently selected net
     void highlightSelectedNets();
+
+    /// Restrict the ratsnest to the selected nets and emphasize their copper, when enabled
+    void updateRatsnestFilter();
+
+    static wxString ratsnestFilterTooltip();
 
     /// Handle an application-level change of units
     void onUnitsChanged( wxCommandEvent& event );
@@ -267,6 +274,9 @@ private:
     bool m_groupByNetChain = false;
     bool m_groupByConstraint = false;
     bool m_showTimeDomainDetails = false;
+    bool m_filterRatsnestBySelection = false;
+
+    BITMAP_BUTTON* m_ratsnestFilterBtn = nullptr;
 
     /// Custom net grouping rules
     std::vector<std::unique_ptr<EDA_COMBINED_MATCHER>> m_custom_group_rules;

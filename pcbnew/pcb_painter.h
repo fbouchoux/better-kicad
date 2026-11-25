@@ -182,6 +182,19 @@ public:
     std::set<int>& GetHiddenNets() { return m_hiddenNets; }
     const std::set<int>& GetHiddenNets() const { return m_hiddenNets; }
 
+    /**
+     * Restrict the ratsnest to \a aNetCodes and emphasize copper on those nets, independently
+     * of the regular net highlight.
+     */
+    void SetRatsnestFilter( bool aActive, std::set<int> aNetCodes )
+    {
+        m_ratsnestFilterActive = aActive;
+        m_ratsnestFilterNets = std::move( aNetCodes );
+    }
+
+    bool IsRatsnestFilterActive() const { return m_ratsnestFilterActive; }
+    const std::set<int>& GetRatsnestFilterNets() const { return m_ratsnestFilterNets; }
+
     // Net chain highlight support (grouped nets).  Empty when no chain highlight active.
     const wxString& GetHighlightedNetChain() const { return m_highlightedNetChain; }
     void SetHighlightedNetChain( const wxString& aNetChain ) { m_highlightedNetChain = aNetChain; }
@@ -230,6 +243,10 @@ protected:
     /// Set of net codes that should not have their ratsnest displayed
     std::set<int> m_hiddenNets;
 
+    /// Net inspector selection used as a ratsnest allow-list and copper emphasis
+    bool          m_ratsnestFilterActive = false;
+    std::set<int> m_ratsnestFilterNets;
+
     // These opacity overrides multiply with any opacity in the base layer color
     double m_trackOpacity;           ///< Opacity override for all tracks
     double m_viaOpacity;             ///< Opacity override for all types of via
@@ -242,6 +259,15 @@ protected:
     double m_outsideGroupOpacity; ///< Opacity override for items outside the entered group
 
     bool isInEnteredGroup( const BOARD_ITEM* aItem ) const;
+
+    /// Net highlight or the net inspector ratsnest filter brightens some nets and dims the rest
+    bool netEmphasisActive() const { return m_highlightEnabled || m_ratsnestFilterActive; }
+
+    bool isNetEmphasized( int aNetCode ) const
+    {
+        return ( m_highlightEnabled && m_highlightNetcodes.contains( aNetCode ) )
+               || ( m_ratsnestFilterActive && m_ratsnestFilterNets.contains( aNetCode ) );
+    }
 
     wxString m_highlightedNetChain;  ///< Active highlighted chain name (if any)
 

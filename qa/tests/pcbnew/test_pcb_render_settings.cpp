@@ -176,6 +176,48 @@ BOOST_AUTO_TEST_CASE( SmartPadColorsUseElectricalRole )
 }
 
 
+/**
+ * The net inspector ratsnest filter emphasizes copper on its nets like a net highlight, and
+ * clearing it restores a highlight that was already active.
+ */
+BOOST_AUTO_TEST_CASE( RatsnestFilterEmphasizesSelectedNets )
+{
+    const KIGFX::COLOR4D layerColor( 0.4, 0.4, 0.4, 1.0 );
+    m_settings.SetLayerColor( F_Cu, layerColor );
+
+    BOARD board;
+
+    NETINFO_ITEM* netA = new NETINFO_ITEM( &board, wxT( "A" ), 1 );
+    NETINFO_ITEM* netB = new NETINFO_ITEM( &board, wxT( "B" ), 2 );
+    board.Add( netA );
+    board.Add( netB );
+
+    PCB_TRACK trackA( &board );
+    trackA.SetLayer( F_Cu );
+    trackA.SetNet( netA );
+
+    PCB_TRACK trackB( &board );
+    trackB.SetLayer( F_Cu );
+    trackB.SetNet( netB );
+
+    m_settings.SetRatsnestFilter( true, { 1 } );
+
+    BOOST_CHECK( m_settings.GetColor( &trackA, F_Cu ).GetBrightness() > layerColor.GetBrightness() );
+    BOOST_CHECK( m_settings.GetColor( &trackB, F_Cu ).GetBrightness() < layerColor.GetBrightness() );
+    BOOST_CHECK( m_settings.IsDimExempt( &trackA ) );
+    BOOST_CHECK( !m_settings.IsDimExempt( &trackB ) );
+
+    m_settings.SetHighlight( true, 2 );
+    m_settings.SetRatsnestFilter( false, {} );
+
+    BOOST_CHECK( m_settings.GetColor( &trackA, F_Cu ).GetBrightness() < layerColor.GetBrightness() );
+    BOOST_CHECK( m_settings.GetColor( &trackB, F_Cu ).GetBrightness() > layerColor.GetBrightness() );
+
+    m_settings.SetHighlight( false );
+    BOOST_CHECK( m_settings.GetColor( &trackA, F_Cu ) == layerColor );
+}
+
+
 BOOST_AUTO_TEST_SUITE_END()
 
 
