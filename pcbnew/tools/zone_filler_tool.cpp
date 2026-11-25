@@ -288,11 +288,13 @@ int ZONE_FILLER_TOOL::ZoneFillDirty( const TOOL_EVENT& aEvent )
 
     board()->IncrementTimeStamp();    // Clear caches
 
-    BOARD_COMMIT                          commit( this );
-    std::unique_ptr<WX_PROGRESS_REPORTER> reporter;
-    int                                   pts = 0;
+    BOARD_COMMIT commit( this );
+    wxString     title = wxString::Format( _( "Refill %d Zones" ), (int) toFill.size() );
+
+    DELAYED_PROGRESS_REPORTER reporter( frame, title, 5, PR_CAN_ABORT, std::chrono::seconds( 2 ) );
 
     m_filler = std::make_unique<ZONE_FILLER>( board(), &commit );
+    m_filler->SetProgressReporter( &reporter );
 
     if( !board()->GetDesignSettings().m_DRCEngine->RulesValid() )
     {
@@ -308,24 +310,6 @@ int ZONE_FILLER_TOOL::ZoneFillDirty( const TOOL_EVENT& aEvent )
 
         infobar->ShowMessageFor( _( "Zone fills may be inaccurate.  DRC rules contain errors." ), 10000,
                                  wxICON_WARNING );
-    }
-
-    for( ZONE* zone : toFill )
-    {
-        zone->GetLayerSet().RunOnLayers(
-                [&]( PCB_LAYER_ID layer )
-                {
-                    pts += zone->GetFilledPolysList( layer )->FullPointCount();
-                } );
-
-        if( pts > 1000 )
-        {
-            wxString title = wxString::Format( _( "Refill %d Zones" ), (int) toFill.size() );
-
-            reporter = std::make_unique<WX_PROGRESS_REPORTER>( frame, title, 5, PR_CAN_ABORT );
-            m_filler->SetProgressReporter( reporter.get() );
-            break;
-        }
     }
 
     bool                        filled = m_filler->Fill( toFill );

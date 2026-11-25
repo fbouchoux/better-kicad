@@ -117,6 +117,59 @@ bool WX_PROGRESS_REPORTER::updateUI()
 }
 
 
+DELAYED_PROGRESS_REPORTER::DELAYED_PROGRESS_REPORTER( wxWindow* aParent, const wxString& aTitle,
+                                                      int aNumPhases, int aCanAbort,
+                                                      std::chrono::milliseconds aDelay ) :
+        PROGRESS_REPORTER_BASE( aNumPhases ),
+        m_parent( aParent ),
+        m_title( aTitle ),
+        m_canAbort( aCanAbort ),
+        m_showTime( std::chrono::steady_clock::now() + aDelay )
+{
+}
+
+
+DELAYED_PROGRESS_REPORTER::~DELAYED_PROGRESS_REPORTER()
+{
+}
+
+
+void DELAYED_PROGRESS_REPORTER::SetTitle( const wxString& aTitle )
+{
+    m_title = aTitle;
+
+    if( m_dialog )
+        m_dialog->SetTitle( aTitle );
+}
+
+
+bool DELAYED_PROGRESS_REPORTER::updateUI()
+{
+    if( !m_dialog )
+    {
+        if( std::chrono::steady_clock::now() < m_showTime )
+            return !m_cancelled.load();
+
+        m_dialog = std::make_unique<WX_PROGRESS_REPORTER>( m_parent, m_title, 1, m_canAbort );
+    }
+
+    int maxProgress = m_maxProgress.load();
+
+    m_dialog->SetNumPhases( m_numPhases.load() );
+    m_dialog->BeginPhase( m_phase.load() );
+    m_dialog->SetCurrentProgress( maxProgress > 0 ? (double) m_progress.load() / maxProgress : 0.0 );
+
+    {
+        std::lock_guard<std::mutex> guard( m_mutex );
+
+        if( m_messageChanged.exchange( false ) )
+            m_dialog->Report( m_rptMessage );
+    }
+
+    return m_dialog->KeepRefreshing();
+}
+
+
 GAUGE_PROGRESS_REPORTER::GAUGE_PROGRESS_REPORTER( wxWindow* aParent, int aNumPhases ) :
         PROGRESS_REPORTER_BASE( aNumPhases ),
         wxGauge( aParent, wxID_ANY, 1000, wxDefaultPosition, wxDefaultSize, wxGA_HORIZONTAL,

@@ -27,6 +27,7 @@
 #include <wx/gauge.h>
 #include <wx/appprogress.h>
 
+#include <memory>
 #include <core/throttle.h>
 #include <widgets/progress_reporter_base.h>
 
@@ -97,6 +98,31 @@ private:
     // Rate-limit expensive dialog repaint and event draining.
     THROTTLE               m_updateThrottle;
     std::atomic_bool       m_lastUpdateResult;
+};
+
+
+/**
+ * Progress reporter which only shows a #WX_PROGRESS_REPORTER dialog once the task has been
+ * running for longer than a given delay.  Until then progress is tracked silently.
+ */
+class DELAYED_PROGRESS_REPORTER : public PROGRESS_REPORTER_BASE
+{
+public:
+    DELAYED_PROGRESS_REPORTER( wxWindow* aParent, const wxString& aTitle, int aNumPhases,
+                               int aCanAbort, std::chrono::milliseconds aDelay );
+    ~DELAYED_PROGRESS_REPORTER();
+
+    void SetTitle( const wxString& aTitle ) override;
+
+private:
+    bool updateUI() override;
+
+private:
+    wxWindow*                             m_parent;
+    wxString                              m_title;
+    int                                   m_canAbort;
+    std::chrono::steady_clock::time_point m_showTime;
+    std::unique_ptr<WX_PROGRESS_REPORTER> m_dialog;
 };
 
 
