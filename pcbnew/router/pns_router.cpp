@@ -26,6 +26,7 @@
 #include <gal/graphics_abstraction_layer.h>
 
 #include <advanced_config.h>
+#include <core/kicad_algo.h>
 #include <settings/settings_manager.h>
 
 #include <pcb_painter.h>
@@ -838,10 +839,17 @@ void ROUTER::updateView( NODE* aNode, ITEM_SET& aCurrent, bool aDragging )
     std::vector<const PNS::ITEM*> cacheCheckItems( added.begin(), added.end() );
     GetRuleResolver()->ClearCacheForItems( cacheCheckItems );
 
+    // Shoved copper of other nets keeps its net color; only the route being drawn switches
+    std::vector<NET_HANDLE> routedNets;
+
+    if( m_state == ROUTE_TRACK && !aDragging )
+        routedNets = GetCurrentNets();
+
     for( ITEM* item : added )
     {
         int clearance = GetRuleResolver()->Clearance( item, nullptr );
-        m_iface->DisplayItem( item, clearance, aDragging );
+        int flags = alg::contains( routedNets, item->Net() ) ? PNS_ROUTED_ITEM : 0;
+        m_iface->DisplayItem( item, clearance, aDragging, flags );
     }
 
     for( ITEM* item : removed )
@@ -874,7 +882,7 @@ bool ROUTER::movePlacing( const VECTOR2I& aP, ITEM* aEndItem )
         const LINE* l = static_cast<const LINE*>( item );
         int clearance = GetRuleResolver()->Clearance( item, nullptr );
 
-        m_iface->DisplayItem( l, clearance, false, PNS_HEAD_TRACE );
+        m_iface->DisplayItem( l, clearance, false, PNS_HEAD_TRACE | PNS_ROUTED_ITEM );
 
         if( l->EndsWithVia() )
         {
@@ -891,7 +899,7 @@ bool ROUTER::movePlacing( const VECTOR2I& aP, ITEM* aEndItem )
                     clearance = excessHoleClearance;
             }
 
-            m_iface->DisplayItem( &l->Via(), clearance, false, PNS_HEAD_TRACE );
+            m_iface->DisplayItem( &l->Via(), clearance, false, PNS_HEAD_TRACE | PNS_ROUTED_ITEM );
         }
     }
 

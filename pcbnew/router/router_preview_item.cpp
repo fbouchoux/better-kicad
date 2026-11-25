@@ -605,7 +605,8 @@ const COLOR4D ROUTER_PREVIEW_ITEM::getLayerColor( int aLayer, const PNS::ITEM* a
 
     COLOR4D color = settings->GetLayerColor( aLayer );
 
-    if( aItem && aItem->Net() && settings->GetNetColorMode() == NET_COLOR_MODE::ALL && IsCopperLayer( aLayer ) )
+    if( aItem && aItem->Net() && !( m_flags & PNS_ROUTED_ITEM )
+        && settings->GetNetColorMode() == NET_COLOR_MODE::ALL && IsCopperLayer( aLayer ) )
     {
         NETINFO_ITEM* ni = static_cast<NETINFO_ITEM*>( aItem->Net() );
 

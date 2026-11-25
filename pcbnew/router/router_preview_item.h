@@ -51,6 +51,7 @@ class ROUTER_IFACE;
 #define PNS_HOVER_ITEM 2
 #define PNS_SEMI_SOLID 4
 #define PNS_COLLISION  8
+#define PNS_ROUTED_ITEM 16 ///< Copper of the route being placed: drawn in layer, not net, colors
 
 
 class ROUTER_PREVIEW_ITEM : public EDA_ITEM
