@@ -116,6 +116,11 @@ PANEL_EDIT_OPTIONS_BASE::PANEL_EDIT_OPTIONS_BASE( wxWindow* parent, wxWindowID i
 
 	m_sizerBoardEdit->Add( m_allowFreePads, 0, wxTOP|wxBOTTOM|wxLEFT, 5 );
 
+	m_routeOnPadClick = new wxCheckBox( this, wxID_ANY, _("Start routing on pad click"), wxDefaultPosition, wxDefaultSize, 0 );
+	m_routeOnPadClick->SetToolTip( _("If checked, a plain click on a copper pad starts routing a track from that pad.") );
+
+	m_sizerBoardEdit->Add( m_routeOnPadClick, 0, wxTOP|wxBOTTOM|wxLEFT, 5 );
+
 
 	bMiddleLeftSizer->Add( m_sizerBoardEdit, 0, wxEXPAND|wxBOTTOM|wxRIGHT|wxLEFT, 5 );
 

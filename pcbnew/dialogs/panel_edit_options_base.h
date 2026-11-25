@@ -55,6 +55,7 @@ class PANEL_EDIT_OPTIONS_BASE : public RESETTABLE_PANEL
 		wxRadioButton* m_rbFlipLeftRight;
 		wxRadioButton* m_rbFlipTopBottom;
 		wxCheckBox* m_allowFreePads;
+		wxCheckBox* m_routeOnPadClick;
 		wxStaticText* m_staticText32;
 		wxStaticLine* m_staticline4;
 		wxBoxSizer* m_mouseCmdsWinLin;

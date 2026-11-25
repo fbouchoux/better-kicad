@@ -70,6 +70,7 @@ PCBNEW_SETTINGS::PCBNEW_SETTINGS() :
         m_ShowCourtyardCollisions( true ),
         m_AutoRefillZones( false ),
         m_AllowFreePads( false ),
+        m_RouteOnPadClick( false ),
         m_AreaAnchorPointSelection( false ),
         m_ImportKeepKiCadLayerNames( false ),
         m_PnsSettings( nullptr ),
@@ -211,6 +212,9 @@ PCBNEW_SETTINGS::PCBNEW_SETTINGS() :
 
     m_params.emplace_back( new PARAM<bool>( "editing.allow_free_pads",
             &m_AllowFreePads, false ) );
+
+    m_params.emplace_back( new PARAM<bool>( "editing.route_on_pad_click",
+            &m_RouteOnPadClick, false ) );
 
     m_params.emplace_back(
             new PARAM<bool>( "editing.area_anchor_point_selection", &m_AreaAnchorPointSelection, false ) );

@@ -266,6 +266,8 @@ public:
                                 // False (default): all pads are treated as locked for the purposes of
                                 // movement and any attempt to move them will move the footprint instead.
 
+    bool      m_RouteOnPadClick; // True: a plain click selecting a copper pad starts routing from it
+
     bool m_AreaAnchorPointSelection; // True: every reshapeable item in a multi-selection
     // shows its own anchor point handles
 

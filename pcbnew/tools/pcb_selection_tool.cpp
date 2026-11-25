@@ -492,7 +492,14 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
                     // Mirrors eeschema's SCH_TABLE shift+click range select.
                     if( !extendTableCellSelectionTo( evt->Position() ) )
                     {
-                        selectPoint( evt->Position() );
+                        if( selectPoint( evt->Position() ) && brd_editor && evt->Modifier() == 0
+                            && m_frame->ToolStackIsEmpty() && startsRouteOnPadClick() )
+                        {
+                            // The router primes itself from the action's cursor position
+                            m_toolMgr->RunAction( PCB_ACTIONS::routeSingleTrack );
+                            m_canceledMenu = false;
+                            continue;
+                        }
 
                         // Anchor for a subsequent shift+click or shift+drag whose IsClick
                         // jitter could otherwise promote into IsDrag, collapsing the range
@@ -596,6 +603,11 @@ int PCB_SELECTION_TOOL::Main( const TOOL_EVENT& aEvent )
             {
                 EnterGroup();
                 selectPoint( evt->Position() );
+            }
+            else if( brd_editor && m_selection.GetSize() == 1
+                     && m_selection[0]->IsType( { PCB_TRACE_T, PCB_ARC_T } ) )
+            {
+                m_toolMgr->RunAction( PCB_ACTIONS::selectConnection );
             }
             else if( !selectGeneratedTableRow( evt->Position() ) )
                 m_toolMgr->RunAction( PCB_ACTIONS::properties );
@@ -1114,6 +1126,22 @@ bool PCB_SELECTION_TOOL::selectPoint( const VECTOR2I& aWhere, bool aOnDrag, bool
     }
 
     return false;
+}
+
+
+bool PCB_SELECTION_TOOL::startsRouteOnPadClick() const
+{
+    PCBNEW_SETTINGS* cfg = m_frame->GetPcbNewSettings();
+
+    if( !cfg || !cfg->m_RouteOnPadClick || m_selection.GetSize() != 1
+        || m_selection[0]->Type() != PCB_PAD_T )
+    {
+        return false;
+    }
+
+    const PAD* pad = static_cast<const PAD*>( m_selection[0] );
+
+    return pad->GetAttribute() != PAD_ATTRIB::NPTH && pad->IsOnCopperLayer();
 }
 
 

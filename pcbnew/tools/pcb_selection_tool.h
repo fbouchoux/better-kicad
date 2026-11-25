@@ -447,6 +447,9 @@ private:
                       bool* aSelectionCancelledFlag = nullptr,
                       CLIENT_SELECTION_FILTER aClientFilter = nullptr );
 
+    /// True when route-on-pad-click is enabled and the selection is a single routable pad.
+    bool startsRouteOnPadClick() const;
+
     /// What one point collection needs beyond the point, and the one count it reports back.
     struct POINT_COLLECT
     {

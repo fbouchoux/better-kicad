@@ -108,6 +108,7 @@ void PANEL_EDIT_OPTIONS::loadPCBSettings( PCBNEW_SETTINGS* aCfg )
         m_rbFlipTopBottom->SetValue( true );
 
     m_allowFreePads->SetValue( aCfg->m_AllowFreePads );
+    m_routeOnPadClick->SetValue( aCfg->m_RouteOnPadClick );
     m_autoRefillZones->SetValue( aCfg->m_AutoRefillZones );
     m_cbAreaAnchorPick->SetValue( aCfg->m_AreaAnchorPointSelection );
 
@@ -193,6 +194,7 @@ bool PANEL_EDIT_OPTIONS::TransferDataFromWindow()
                                                                  : FLIP_DIRECTION::TOP_BOTTOM;
 
             cfg->m_AllowFreePads = m_allowFreePads->GetValue();
+            cfg->m_RouteOnPadClick = m_routeOnPadClick->GetValue();
             cfg->m_AutoRefillZones = m_autoRefillZones->GetValue();
             cfg->m_AreaAnchorPointSelection = m_cbAreaAnchorPick->GetValue();
 
